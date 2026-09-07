@@ -1,0 +1,40 @@
+server:
+  port: 0
+
+spring:
+  application:
+    name: smarthotel-fieldops-test
+  datasource:
+    url: jdbc:h2:mem:fieldops_test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=PostgreSQL
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    database-platform: org.hibernate.dialect.H2Dialect
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:9999/.well-known/jwks.json
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration
+
+biometrics:
+  device-api-key: smarthotel_device_secret_2026
+
+allocation:
+  max-concurrent-tasks: 5
+  max-daily-tasks: 10
+
+rabbitmq:
+  exchange:
+    events: smarthotel.events
+  queue:
+    booking-checkout: smarthotel.fieldops.booking-checkout
+    employee-sync: smarthotel.fieldops.employee-sync
+  routing-key:
+    booking-checkout: booking.checkedout
+    employee-sync: employee.*

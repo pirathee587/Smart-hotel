@@ -1,0 +1,56 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: smarthotel-fieldops
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres:5432/smarthotel_fieldops}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:supersecret_postgres_password}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${JWT_JWKS_URI:http://identity-service:5001/.well-known/jwks.json}
+          issuer-uri: ${JWT_ISSUER:SmartHotel.Identity}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:rabbitmq}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_DEFAULT_USER:guest}
+    password: ${RABBITMQ_DEFAULT_PASS:guest}
+
+biometrics:
+  device-api-key: ${BIOMETRICS_DEVICE_API_KEY:smarthotel_device_secret_2026}
+
+allocation:
+  max-concurrent-tasks: ${MAX_CONCURRENT_TASKS:5}
+  max-daily-tasks: ${MAX_DAILY_TASKS:10}
+
+rabbitmq:
+  exchange:
+    events: smarthotel.events
+  queue:
+    booking-checkout: smarthotel.fieldops.booking-checkout
+    employee-sync: smarthotel.fieldops.employee-sync
+  routing-key:
+    booking-checkout: booking.checkedout
+    employee-sync: employee.*
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always

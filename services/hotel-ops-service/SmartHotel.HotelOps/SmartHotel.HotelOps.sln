@@ -1,0 +1,51 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartHotel.HotelOps.Domain", "SmartHotel.HotelOps.Domain\SmartHotel.HotelOps.Domain.csproj", "{2042F1DF-4FEA-4A28-8044-CD8CB6EBA9AB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartHotel.HotelOps.Application", "SmartHotel.HotelOps.Application\SmartHotel.HotelOps.Application.csproj", "{46AF054B-5EFD-4748-BADF-A70D6FB357DB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartHotel.HotelOps.Infrastructure", "SmartHotel.HotelOps.Infrastructure\SmartHotel.HotelOps.Infrastructure.csproj", "{110CBA10-FB87-452E-A8E8-087A6137E5C0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartHotel.HotelOps.API", "SmartHotel.HotelOps.API\SmartHotel.HotelOps.API.csproj", "{F6C8279C-84E5-4C05-B854-FE055D54C796}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{D73DBB51-DADC-445D-AA98-BA182751447A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartHotel.HotelOps.Tests", "tests\SmartHotel.HotelOps.Tests\SmartHotel.HotelOps.Tests.csproj", "{6040944C-8641-481A-A3AD-CBF602C89231}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2042F1DF-4FEA-4A28-8044-CD8CB6EBA9AB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2042F1DF-4FEA-4A28-8044-CD8CB6EBA9AB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2042F1DF-4FEA-4A28-8044-CD8CB6EBA9AB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2042F1DF-4FEA-4A28-8044-CD8CB6EBA9AB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{46AF054B-5EFD-4748-BADF-A70D6FB357DB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{46AF054B-5EFD-4748-BADF-A70D6FB357DB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{46AF054B-5EFD-4748-BADF-A70D6FB357DB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{46AF054B-5EFD-4748-BADF-A70D6FB357DB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{110CBA10-FB87-452E-A8E8-087A6137E5C0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{110CBA10-FB87-452E-A8E8-087A6137E5C0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{110CBA10-FB87-452E-A8E8-087A6137E5C0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{110CBA10-FB87-452E-A8E8-087A6137E5C0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F6C8279C-84E5-4C05-B854-FE055D54C796}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F6C8279C-84E5-4C05-B854-FE055D54C796}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F6C8279C-84E5-4C05-B854-FE055D54C796}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F6C8279C-84E5-4C05-B854-FE055D54C796}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6040944C-8641-481A-A3AD-CBF602C89231}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6040944C-8641-481A-A3AD-CBF602C89231}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6040944C-8641-481A-A3AD-CBF602C89231}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6040944C-8641-481A-A3AD-CBF602C89231}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{6040944C-8641-481A-A3AD-CBF602C89231} = {D73DBB51-DADC-445D-AA98-BA182751447A}
+	EndGlobalSection
+EndGlobal

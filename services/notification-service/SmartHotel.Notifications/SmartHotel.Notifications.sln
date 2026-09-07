@@ -1,0 +1,51 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartHotel.Notifications.Domain", "SmartHotel.Notifications.Domain\SmartHotel.Notifications.Domain.csproj", "{BB6AE73C-810A-419F-AC88-F2C57BAEA6A2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartHotel.Notifications.Application", "SmartHotel.Notifications.Application\SmartHotel.Notifications.Application.csproj", "{5045B084-34B4-49FB-B4DA-8E737F7447E3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartHotel.Notifications.Infrastructure", "SmartHotel.Notifications.Infrastructure\SmartHotel.Notifications.Infrastructure.csproj", "{FE636468-C61F-406F-B10D-4C72A33AFE81}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartHotel.Notifications.API", "SmartHotel.Notifications.API\SmartHotel.Notifications.API.csproj", "{5760B7D9-273E-432C-BF8D-E95944AD7E24}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{76431225-1D25-43F9-AFE6-E2A001631947}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartHotel.Notifications.Tests", "tests\SmartHotel.Notifications.Tests\SmartHotel.Notifications.Tests.csproj", "{470596AC-38D4-4C39-A4C8-8848E2EA080C}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BB6AE73C-810A-419F-AC88-F2C57BAEA6A2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BB6AE73C-810A-419F-AC88-F2C57BAEA6A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BB6AE73C-810A-419F-AC88-F2C57BAEA6A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BB6AE73C-810A-419F-AC88-F2C57BAEA6A2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5045B084-34B4-49FB-B4DA-8E737F7447E3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5045B084-34B4-49FB-B4DA-8E737F7447E3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5045B084-34B4-49FB-B4DA-8E737F7447E3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5045B084-34B4-49FB-B4DA-8E737F7447E3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FE636468-C61F-406F-B10D-4C72A33AFE81}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FE636468-C61F-406F-B10D-4C72A33AFE81}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FE636468-C61F-406F-B10D-4C72A33AFE81}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FE636468-C61F-406F-B10D-4C72A33AFE81}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5760B7D9-273E-432C-BF8D-E95944AD7E24}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5760B7D9-273E-432C-BF8D-E95944AD7E24}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5760B7D9-273E-432C-BF8D-E95944AD7E24}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5760B7D9-273E-432C-BF8D-E95944AD7E24}.Release|Any CPU.Build.0 = Release|Any CPU
+		{470596AC-38D4-4C39-A4C8-8848E2EA080C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{470596AC-38D4-4C39-A4C8-8848E2EA080C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{470596AC-38D4-4C39-A4C8-8848E2EA080C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{470596AC-38D4-4C39-A4C8-8848E2EA080C}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{470596AC-38D4-4C39-A4C8-8848E2EA080C} = {76431225-1D25-43F9-AFE6-E2A001631947}
+	EndGlobalSection
+EndGlobal

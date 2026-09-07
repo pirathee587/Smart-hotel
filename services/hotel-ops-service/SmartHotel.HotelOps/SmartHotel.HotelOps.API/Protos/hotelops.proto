@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+option csharp_namespace = "SmartHotel.HotelOps.Grpc";
+
+package hotelops;
+
+service HotelOpsGrpc {
+  rpc GetRoomTypeAvailability (RoomTypeAvailabilityRequest) returns (RoomTypeAvailabilityResponse);
+}
+
+message RoomTypeAvailabilityRequest {
+  string room_type_id = 1;
+}
+
+message RoomTypeAvailabilityResponse {
+  bool exists = 1;
+  bool is_published = 2;
+  int32 capacity = 3;
+  double price_per_night = 4;
+  double cleaning_fee = 5;
+  double amenities_fee = 6;
+}

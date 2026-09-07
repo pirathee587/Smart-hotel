@@ -1,0 +1,369 @@
+version: '3.8'
+
+networks:
+  smarthotel-network:
+    name: smarthotel-network
+    driver: bridge
+
+volumes:
+  postgres_data:
+    name: smarthotel_postgres_data
+
+services:
+  # ===========================================================================
+  # 1. DATABASE LAYER: PostgreSQL 16
+  # ===========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: smarthotel-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_SUPERUSER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS:-supersecret_postgres_password}
+      POSTGRES_DB: ${POSTGRES_IDENTITY_DB:-smarthotel_identity_db}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init-scripts:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - smarthotel-network
+
+  # ===========================================================================
+  # 2. MESSAGE BROKER: RabbitMQ
+  # ===========================================================================
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: smarthotel-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - smarthotel-network
+
+  # ===========================================================================
+  # 3. CORE SERVICE #1: Identity Service (.NET 8 Clean Architecture)
+  # ===========================================================================
+  identity-service:
+    build:
+      context: ../services/identity-service
+      dockerfile: Dockerfile
+    container_name: smarthotel-identity-service
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=smarthotel_identity_db;Username=${POSTGRES_SUPERUSER:-postgres};Password=${POSTGRES_SUPERPASS:-supersecret_postgres_password};Include Error Detail=true;
+      Jwt__Issuer: ${JWT_ISSUER:-SmartHotel.Identity}
+      Jwt__Audience: ${JWT_AUDIENCE:-SmartHotel.Clients}
+      Jwt__AccessTokenExpirationMinutes: ${JWT_ACCESS_TOKEN_EXPIRATION_MINUTES:-60}
+    ports:
+      - "${IDENTITY_HTTP_PORT:-5001}:5001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5001/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - smarthotel-network
+
+  # ===========================================================================
+  # 4. CORE SERVICE #2: Hotel Operations Service (.NET 8 Clean Architecture)
+  # ===========================================================================
+  hotel-ops-service:
+    build:
+      context: ../services/hotel-ops-service
+      dockerfile: Dockerfile
+    container_name: smarthotel-hotelops-service
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=smarthotel_hotelops_db;Username=${POSTGRES_SUPERUSER:-postgres};Password=${POSTGRES_SUPERPASS:-supersecret_postgres_password};Include Error Detail=true;
+      Jwt__Issuer: ${JWT_ISSUER:-SmartHotel.Identity}
+      Jwt__Audience: ${JWT_AUDIENCE:-SmartHotel.Clients}
+      Jwt__JwksUri: http://identity-service:5001/.well-known/jwks.json
+      RabbitMQ__HostName: rabbitmq
+      RabbitMQ__Port: 5672
+    ports:
+      - "${HOTELOPS_HTTP_PORT:-5002}:5002"
+      - "${HOTELOPS_GRPC_PORT:-5012}:5012"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      identity-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5002/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - smarthotel-network
+
+  # ===========================================================================
+  # 5. CORE SERVICE #3: Booking & Payments Service (.NET 8 Clean Architecture)
+  # ===========================================================================
+  booking-payments-service:
+    build:
+      context: ../services/booking-payments-service
+      dockerfile: Dockerfile
+    container_name: smarthotel-booking-service
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=smarthotel_bookings;Username=${POSTGRES_SUPERUSER:-postgres};Password=${POSTGRES_SUPERPASS:-supersecret_postgres_password};Include Error Detail=true;
+      Jwt__Issuer: ${JWT_ISSUER:-SmartHotel.Identity}
+      Jwt__Audience: ${JWT_AUDIENCE:-SmartHotel.Clients}
+      Jwt__JwksUri: http://identity-service:5001/.well-known/jwks.json
+      HOTEL_OPS_SERVICE_URL: http://hotel-ops-service:5002
+      HOTEL_OPS_GRPC_URL: http://hotel-ops-service:5012
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      PAYHERE_MERCHANT_ID: ${PAYHERE_MERCHANT_ID:-1220001}
+      PAYHERE_MERCHANT_SECRET: ${PAYHERE_MERCHANT_SECRET:-smarthotel_secret_sandbox_key_2026}
+      PAYHERE_IS_SANDBOX: "true"
+    ports:
+      - "${BOOKING_HTTP_PORT:-5003}:5003"
+      - "${BOOKING_GRPC_PORT:-5013}:5013"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      identity-service:
+        condition: service_healthy
+      hotel-ops-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5003/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - smarthotel-network
+
+  # ===========================================================================
+  # 6. CORE SERVICE #4: Field Operations Service (Java 21 Spring Boot 3)
+  # ===========================================================================
+  field-ops-service:
+    build:
+      context: ../services/field-ops-service
+      dockerfile: Dockerfile
+    container_name: smarthotel-fieldops-service
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/smarthotel_fieldops
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_SUPERUSER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_SUPERPASS:-supersecret_postgres_password}
+      JWT_JWKS_URI: http://identity-service:5001/.well-known/jwks.json
+      JWT_ISSUER: ${JWT_ISSUER:-SmartHotel.Identity}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      BIOMETRICS_DEVICE_API_KEY: ${BIOMETRICS_DEVICE_API_KEY:-smarthotel_device_secret_2026}
+    ports:
+      - "${FIELDOPS_HTTP_PORT:-8084}:8084"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      identity-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8084/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - smarthotel-network
+
+  # ===========================================================================
+  # 7. IN-MEMORY CACHE & SIGNALR BACKPLANE: Redis 7
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: smarthotel-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - smarthotel-network
+
+  # ===========================================================================
+  # 8. CORE SERVICE #5: Notification Service (.NET 8 Clean Architecture + SignalR)
+  # ===========================================================================
+  notification-service:
+    build:
+      context: ../services/notification-service
+      dockerfile: Dockerfile
+    container_name: smarthotel-notification-service
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=smarthotel_notifications;Username=${POSTGRES_SUPERUSER:-postgres};Password=${POSTGRES_SUPERPASS:-supersecret_postgres_password};Include Error Detail=true;
+      Jwt__Issuer: ${JWT_ISSUER:-SmartHotel.Identity}
+      Jwt__Audience: ${JWT_AUDIENCE:-SmartHotel.Clients}
+      Jwt__JwksUri: http://identity-service:5001/.well-known/jwks.json
+      Redis__ConnectionString: redis:6379
+      RabbitMQ__Host: rabbitmq
+      RabbitMQ__Port: 5672
+    ports:
+      - "${NOTIFICATION_HTTP_PORT:-5004}:5004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      identity-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5004/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - smarthotel-network
+
+  # ===========================================================================
+  # 9. CORE SERVICE #6: AI Concierge Service (Python 3.11 FastAPI + ChromaDB)
+  # ===========================================================================
+  concierge-service:
+    build:
+      context: ../services/ai-concierge-service
+      dockerfile: Dockerfile
+    container_name: smarthotel-concierge-service
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      PORT: 5005
+      JWT_ISSUER: ${JWT_ISSUER:-SmartHotel.Identity}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-SmartHotel.Clients}
+      JWT_JWKS_URI: http://identity-service:5001/.well-known/jwks.json
+      BOOKING_SERVICE_URL: http://booking-payments-service:5003
+      BOOKING_GRPC_HOST: booking-payments-service
+      BOOKING_GRPC_PORT: 5013
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_DEFAULT_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-guest}
+      RATE_LIMIT_PER_MINUTE: 20
+    ports:
+      - "${CONCIERGE_HTTP_PORT:-5005}:5005"
+    depends_on:
+      identity-service:
+        condition: service_healthy
+      booking-payments-service:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5005/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - smarthotel-network
+
+  # ===========================================================================
+  # 10. INNER EDGE: YARP API Gateway (JWT Validation, Rate Limiting, Routing)
+  # ===========================================================================
+  gateway:
+    build:
+      context: ../gateway/SmartHotel.Gateway
+      dockerfile: Dockerfile
+    container_name: smarthotel-gateway
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      Authentication__Issuer: ${JWT_ISSUER:-SmartHotel.Identity}
+      Authentication__Audience: ${JWT_AUDIENCE:-SmartHotel.Clients}
+      Authentication__JwksUri: http://identity-service:5001/.well-known/jwks.json
+      DownstreamServices__IdentityService: http://identity-service:5001
+      DownstreamServices__HotelOpsService: http://hotel-ops-service:5002
+      DownstreamServices__BookingService: http://booking-payments-service:5003
+      DownstreamServices__FieldOpsService: http://field-ops-service:8084
+      DownstreamServices__NotificationService: http://notification-service:5004
+      DownstreamServices__ConciergeService: http://concierge-service:5005
+      ReverseProxy__Clusters__identity-service__Destinations__destination1__Address: http://identity-service:5001
+      ReverseProxy__Clusters__hotelops-service__Destinations__destination1__Address: http://hotel-ops-service:5002
+      ReverseProxy__Clusters__booking-service__Destinations__destination1__Address: http://booking-payments-service:5003
+      ReverseProxy__Clusters__fieldops-service__Destinations__destination1__Address: http://field-ops-service:8084
+      ReverseProxy__Clusters__notifications-service__Destinations__destination1__Address: http://notification-service:5004
+      ReverseProxy__Clusters__concierge-service__Destinations__destination1__Address: http://concierge-service:5005
+    ports:
+      - "${GATEWAY_HTTP_PORT:-5000}:5000"
+    depends_on:
+      identity-service:
+        condition: service_healthy
+      hotel-ops-service:
+        condition: service_healthy
+      booking-payments-service:
+        condition: service_healthy
+      field-ops-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+      concierge-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - smarthotel-network
+
+  # ===========================================================================
+  # 7. OUTER EDGE: NGINX Reverse Proxy (SSL Termination, Coarse IP Rate Limit)
+  # ===========================================================================
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: smarthotel-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-check-certificate -qO- https://localhost/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - smarthotel-network

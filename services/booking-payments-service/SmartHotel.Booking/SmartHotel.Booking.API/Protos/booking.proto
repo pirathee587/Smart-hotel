@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+option csharp_namespace = "SmartHotel.Booking.Grpc";
+
+package booking;
+
+service BookingGrpc {
+  rpc GetActiveStay (ActiveStayRequest) returns (ActiveStayResponse);
+}
+
+message ActiveStayRequest {
+  string customer_id = 1;
+}
+
+message ActiveStayResponse {
+  bool has_active_stay = 1;
+  string room_number = 2;
+  string check_out_date = 3;
+  string booking_reference = 4;
+}

@@ -1,0 +1,63 @@
+:root {
+  /* SmartHotel Maskeliya Design Tokens */
+  --ink: #0F1B1A;
+  --ink-2: #16302C;
+  --pine: #2F5C52;
+  --pine-soft: #7C9188;
+  --paper: #F6F1E6;
+  --paper-dim: #EEE7D6;
+  --cedar: #6B4A3A;
+  --ember: #C4622D;
+  --ember-bright: #E07A3E;
+  --ink-text: #3A362E;
+
+  /* Light Mode Audit Variables */
+  --bg-dark: #FAFAF8;
+  --card-dark: #FFFFFF;
+  --card-border: rgba(27, 42, 74, 0.08);
+  --text-primary: #1B2A4A;
+  --text-secondary: #555555;
+  --section-alt: #F5F0EA;
+  --primary: #C4622D;
+  --primary-hover: #E07A3E;
+}
+
+.dark {
+  /* Dark Mode Variables */
+  --bg-dark: #0F1B1A;
+  --card-dark: #16302C;
+  --card-border: rgba(246, 241, 230, 0.08);
+  --text-primary: #F6F1E6;
+  --text-secondary: #7C9188;
+  --section-alt: #16302C;
+  --primary: #C4622D;
+  --primary-hover: #E07A3E;
+}
+
+@theme {
+  --color-ink: #0F1B1A;
+  --color-ink-2: #16302C;
+  --color-pine: #2F5C52;
+  --color-pine-soft: #7C9188;
+  --color-paper: #F6F1E6;
+  --color-paper-dim: #EEE7D6;
+  --color-cedar: #6B4A3A;
+  --color-ember: #C4622D;
+  --color-ember-bright: #E07A3E;
+  --color-ink-text: #3A362E;
+
+  --color-primary: #C4622D;
+  --color-primary-hover: #E07A3E;
+  --color-secondary: #2F5C52;
+  --color-accent: #E07A3E;
+
+  --color-bg-dark: var(--bg-dark);
+  --color-card-dark: var(--card-dark);
+  --color-card-border: var(--card-border);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-section-alt: var(--section-alt);
+
+  --font-serif: var(--font-fraunces), var(--font-playfair), Georgia, serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+}
