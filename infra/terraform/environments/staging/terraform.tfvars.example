@@ -1,0 +1,6 @@
+aws_region                  = "ap-south-1"
+allowed_https_cidrs         = ["0.0.0.0/0"]
+control_plane_instance_type = "t3.large"
+worker_instance_type        = "t3.large"
+worker_count                = 2
+kubernetes_bootstrap_token  = "REPLACE_VIA_TF_VAR_ENVIRONMENT_VARIABLE"

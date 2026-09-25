@@ -17,9 +17,11 @@ public class Booking : BaseEntity
     public DateOnly CheckOutDate { get; set; }
     public int GuestCount { get; set; }
     public decimal TotalAmount { get; set; }
+    public string? Currency { get; set; }
     public BookingStatus Status { get; set; } = BookingStatus.PendingPayment;
     public string? PaymentReference { get; set; }
     public string? PayHereOrderId { get; set; }
+    public DateTime? CheckoutInitiatedAtUtc { get; set; }
 
     public ICollection<Payment> Payments { get; set; } = new List<Payment>();
     public Review? Review { get; set; }

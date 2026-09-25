@@ -9,6 +9,9 @@ public interface IAppDbContext
     DbSet<Employee> Employees { get; }
     DbSet<Customer> Customers { get; }
     DbSet<Department> Departments { get; }
+    DbSet<ApprovalRequest> ApprovalRequests { get; }
+    DbSet<RefreshToken> RefreshTokens { get; }
+    DbSet<GuestAccessAuditLog> GuestAccessAuditLogs { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

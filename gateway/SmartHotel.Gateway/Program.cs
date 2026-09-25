@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using System.Net.Http.Json;
 
 namespace SmartHotel.Gateway;
 
@@ -30,6 +31,11 @@ public class Program
         builder.Services.AddHttpClient<IJwksKeyResolver, JwksKeyResolver>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(10);
+        });
+        builder.Services.AddHttpClient("EmployeeAccess", client =>
+        {
+            client.BaseAddress = new Uri(builder.Configuration["DownstreamServices:IdentityService"] ?? "http://identity-service:5001");
+            client.Timeout = TimeSpan.FromSeconds(5);
         });
 
         builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -189,6 +195,8 @@ public class Program
 
         // Authentication validates JWT; Authorization blocks unauthorized access to protected routes
         app.UseAuthentication();
+        app.UseMiddleware<ProfileCompletionAccessMiddleware>();
+        app.UseMiddleware<ActiveEmployeeAccessMiddleware>();
         app.UseAuthorization();
         app.UseRateLimiter();
 
@@ -231,15 +239,15 @@ public class Program
         }
 
         var path = context.Request.Path.Value?.ToLowerInvariant() ?? string.Empty;
-        if (path.StartsWith("/api/v1/auth") || path.StartsWith("/api/v1/customers") || path.StartsWith("/api/v1/employees") || path.StartsWith("/api/v1/portal-auth") || path.StartsWith("/.well-known"))
+        if (path.StartsWith("/api/v1/auth") || path.StartsWith("/api/v1/customers") || path.StartsWith("/api/v1/employees") || path.StartsWith("/api/v1/departments") || path.StartsWith("/api/v1/approval-requests") || path.StartsWith("/api/v1/portal-auth") || path.StartsWith("/.well-known"))
         {
             return "identity-service";
         }
-        if (path.StartsWith("/api/v1/room-types") || path.StartsWith("/api/v1/rooms") || path.StartsWith("/api/v1/hotels") || path.StartsWith("/api/v1/departments"))
+        if (path.StartsWith("/api/v1/room-types") || path.StartsWith("/api/v1/rooms") || path.StartsWith("/api/v1/hotels"))
         {
             return "hotelops-service";
         }
-        if (path.StartsWith("/api/v1/bookings") || path.StartsWith("/api/v1/payments") || path.StartsWith("/api/v1/kiosk") || path.StartsWith("/api/v1/reviews") || path.StartsWith("/api/v1/complaints"))
+        if (path.StartsWith("/api/v1/bookings") || path.StartsWith("/api/v1/payments") || path.StartsWith("/api/v1/kiosk") || path.StartsWith("/api/v1/reviews") || path.StartsWith("/api/v1/complaints") || path.StartsWith("/api/v1/finance"))
         {
             return "booking-service";
         }
@@ -272,6 +280,120 @@ public class Program
         // All internal employee roles: Manager, Receptionist, Housekeeper, Maintenance, Chef, Waiter, Security, Employee
         return options.Employee;
     }
+}
+
+public sealed class ProfileCompletionAccessMiddleware
+{
+    private readonly RequestDelegate _next;
+    public ProfileCompletionAccessMiddleware(RequestDelegate next) => _next = next;
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        if (context.User.Identity?.IsAuthenticated == true &&
+            string.Equals(context.User.FindFirst("profile_incomplete")?.Value, "true", StringComparison.OrdinalIgnoreCase))
+        {
+            var path = context.Request.Path.Value ?? string.Empty;
+            var allowed = path.StartsWith("/api/v1/auth/", StringComparison.OrdinalIgnoreCase) ||
+                          path.Equals("/api/v1/employees/me/profile", StringComparison.OrdinalIgnoreCase) ||
+                          path.StartsWith("/api/v1/images/upload", StringComparison.OrdinalIgnoreCase);
+            if (!allowed)
+            {
+                var deadlineText = context.User.FindFirst("profile_completion_deadline")?.Value;
+                var expired = DateTime.TryParse(deadlineText, out var deadline) && deadline.ToUniversalTime() <= DateTime.UtcNow;
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    error = expired ? "profile_completion_expired" : "profile_completion_required",
+                    message = expired
+                        ? "Credentials are disabled because the two-day profile completion deadline expired."
+                        : "Complete the required profile details before accessing the portal.",
+                    profileCompletionRequired = true,
+                    profileCompletionDeadlineUtc = deadlineText
+                });
+                return;
+            }
+        }
+        await _next(context);
+    }
+}
+
+public sealed class ActiveEmployeeAccessMiddleware
+{
+    private readonly RequestDelegate _next;
+    private static readonly HashSet<string> EmployeeRoles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Owner", "Admin", "Manager", "Receptionist", "Housekeeper", "Maintenance", "Chef", "Waiter", "Security"
+    };
+
+    public ActiveEmployeeAccessMiddleware(RequestDelegate next) => _next = next;
+
+    public async Task InvokeAsync(HttpContext context, IHttpClientFactory clientFactory)
+    {
+        if (context.User.Identity?.IsAuthenticated == true)
+        {
+            var role = context.User.FindFirst(ClaimTypes.Role)?.Value ?? context.User.FindFirst("role")?.Value;
+            var subject = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? context.User.FindFirst("sub")?.Value;
+            if (role is not null && EmployeeRoles.Contains(role) && Guid.TryParse(subject, out var employeeId))
+            {
+                try
+                {
+                    var response = await clientFactory.CreateClient("EmployeeAccess")
+                        .GetAsync($"/api/v1/internal/employees/{employeeId}/access-status", context.RequestAborted);
+                    var state = response.IsSuccessStatusCode
+                        ? await response.Content.ReadFromJsonAsync<EmployeeAccessState>(cancellationToken: context.RequestAborted)
+                        : null;
+
+                    if (response.StatusCode == System.Net.HttpStatusCode.NotFound || state is null)
+                    {
+                        // A signed token may outlive a replaced/reset database.
+                        // Treat an unknown subject as an invalid session so the
+                        // client can refresh or return to login, not as a role
+                        // authorization failure that strands the UI on a 403.
+                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        await context.Response.WriteAsJsonAsync(new
+                        {
+                            error = "unknown_employee_session",
+                            message = "This employee session no longer exists. Please sign in again."
+                        });
+                        return;
+                    }
+
+                    var tokenDepartment = context.User.FindFirst("departmentId")?.Value;
+                    if (!state.Approved)
+                    {
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        await context.Response.WriteAsJsonAsync(new { error = "employee_not_approved", message = "Employee account is not approved for access." });
+                        return;
+                    }
+
+                    var currentDepartment = state.DepartmentId?.ToString();
+                    if (!string.Equals(tokenDepartment, currentDepartment, StringComparison.OrdinalIgnoreCase))
+                    {
+                        // The employee is still approved, but authorization claims
+                        // changed after this access token was issued. A 401 allows
+                        // the client to rotate its refresh token and obtain current
+                        // claims; a 403 incorrectly leaves the session stranded.
+                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        await context.Response.WriteAsJsonAsync(new
+                        {
+                            error = "stale_access_token",
+                            message = "Employee authorization claims changed. Refresh the access token."
+                        });
+                        return;
+                    }
+                }
+                catch (Exception)
+                {
+                    context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                    await context.Response.WriteAsJsonAsync(new { error = "identity_status_unavailable", message = "Employee access status could not be verified." });
+                    return;
+                }
+            }
+        }
+        await _next(context);
+    }
+
+    private sealed record EmployeeAccessState(bool Approved, Guid? DepartmentId);
 }
 
 // -----------------------------------------------------------------------------

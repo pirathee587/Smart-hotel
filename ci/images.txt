@@ -1,0 +1,8 @@
+frontend|frontend/Dockerfile|frontend
+gateway|gateway/SmartHotel.Gateway/Dockerfile|.
+identity|services/identity-service/Dockerfile|.
+booking|services/booking-payments-service/Dockerfile|.
+hotel-ops|services/hotel-ops-service/Dockerfile|.
+field-ops|services/field-ops-service/Dockerfile|services/field-ops-service
+notifications|services/notification-service/Dockerfile|services/notification-service
+concierge|services/ai-concierge-service/Dockerfile|services/ai-concierge-service

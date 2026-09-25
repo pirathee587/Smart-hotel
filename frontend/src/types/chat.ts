@@ -103,3 +103,52 @@ export interface RequestStatusUpdate {
   taskStatus?: TaskStatus;
   assignedEmployeeName?: string;
 }
+
+// ── Phase 8A AI Concierge SSE & Lifecycle Types ──────────────────────────────
+
+export type ConciergeRequestLifecycleStatus =
+  | 'REQUEST_PENDING'
+  | 'TASK_CREATED'
+  | 'ASSIGNED'
+  | 'IN_PROGRESS'
+  | 'COMPLETED'
+  | 'FAILED';
+
+export interface ConciergeServiceRequestDto {
+  requestId: string;
+  eventId: string;
+  conversationId?: string;
+  customerId: string;
+  roomNumber: string;
+  requestType: string;
+  description: string;
+  priority: string;
+  status: ConciergeRequestLifecycleStatus;
+  taskId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConciergeStreamContext {
+  verifiedRoom?: string;
+  bookingReference?: string;
+  guestName?: string;
+}
+
+export interface ConciergeMessageItemDto {
+  id: string;
+  conversationId: string;
+  role: string;
+  content: string;
+  eventId?: string;
+  status?: string;
+  metadataJson?: string;
+  createdAt: string;
+}
+
+export interface ConciergeConversationHistoryDto {
+  conversationId: string;
+  customerId: string;
+  messages: ConciergeMessageItemDto[];
+}
+

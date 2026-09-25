@@ -1,7 +1,7 @@
 "use client";
 
+import { ChevronLeft,ChevronRight } from "lucide-react";
 import * as React from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -36,6 +36,9 @@ export interface CoverflowCarouselProps {
   showCaption?: boolean;
   showPagination?: boolean;
   showNavigation?: boolean;
+  showBookNow?: boolean;
+  bookNowHref?: string;
+  bookNowLabel?: string;
   /** Names the carousel for assistive tech. */
   label?: string;
   className?: string;

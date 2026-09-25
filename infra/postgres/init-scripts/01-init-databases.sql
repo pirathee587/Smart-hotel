@@ -10,3 +10,6 @@ WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'smarthotel_fieldops')
 
 SELECT 'CREATE DATABASE smarthotel_notifications'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'smarthotel_notifications')\gexec
+
+SELECT 'CREATE DATABASE smarthotel_concierge_db'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'smarthotel_concierge_db')\gexec

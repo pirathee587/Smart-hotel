@@ -8,6 +8,7 @@ using SmartHotel.HotelOps.API.Services;
 using SmartHotel.HotelOps.Application;
 using SmartHotel.HotelOps.Infrastructure;
 using SmartHotel.HotelOps.Infrastructure.Persistence;
+using SmartHotel.Authorization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -33,6 +34,8 @@ builder.Services.AddControllers();
 builder.Services.AddGrpc();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddHealthChecks();
+builder.Services.AddScoped<HousekeepingReadinessService>();
+builder.Services.AddScoped<MaintenanceRestrictionService>();
 
 // 2. Swagger with Bearer token authentication
 builder.Services.AddSwaggerGen(options =>
@@ -110,7 +113,7 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddHotelDepartmentAuthorization();
 
 builder.Services.AddCors(options =>
 {
@@ -151,7 +154,7 @@ using (var scope = app.Services.CreateScope())
     {
         if (context.Database.IsRelational())
         {
-            await context.Database.EnsureCreatedAsync();
+            await context.Database.MigrateAsync();
         }
         await DataSeeder.SeedAsync(context, logger);
     }

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SmartHotel.Identity.Application.Features.Auth.Models;
 using SmartHotel.Identity.Application.Features.Auth.Services;
+using SmartHotel.Identity.Application.Interfaces;
 
 namespace SmartHotel.Identity.API.Controllers;
 
@@ -11,10 +12,47 @@ namespace SmartHotel.Identity.API.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
+    private readonly ITokenService _tokenService;
 
-    public AuthController(IAuthService authService)
+    public AuthController(IAuthService authService, ITokenService tokenService)
     {
         _authService = authService;
+        _tokenService = tokenService;
+    }
+
+    [HttpPost("api/v1/auth/refresh")]
+    [HttpPost("api/identity/refresh")]
+    [HttpPost("api/v1/identity/refresh")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Refresh([FromBody] RefreshTokenRequest request, CancellationToken ct)
+    {
+        var tokens = await _tokenService.RefreshAsync(request.RefreshToken, ct);
+        if (tokens == null)
+        {
+            return Unauthorized(new { message = "Invalid refresh token." });
+        }
+
+        return Ok(new
+        {
+            accessToken = tokens.AccessToken,
+            token = tokens.AccessToken,
+            refreshToken = tokens.RefreshToken,
+            tokenType = "Bearer",
+            expiresIn = tokens.ExpiresInSeconds
+        });
+    }
+
+    [HttpPost("api/v1/auth/logout")]
+    [HttpPost("api/identity/logout")]
+    [HttpPost("api/v1/identity/logout")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> Logout([FromBody] RefreshTokenRequest request, CancellationToken ct)
+    {
+        await _tokenService.RevokeAsync(request.RefreshToken, ct);
+        return NoContent();
     }
 
     /// <summary>
@@ -215,7 +253,17 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = result.Message, errors = result.Errors });
         }
 
-        return Ok(new { message = result.Message });
+        return Ok(new
+        {
+            message = result.Message,
+            accessToken = result.Data?.AccessToken,
+            token = result.Data?.Token,
+            refreshToken = result.Data?.RefreshToken,
+            tokenType = result.Data?.TokenType,
+            expiresIn = result.Data?.ExpiresIn,
+            mustChangePassword = false,
+            user = result.Data?.User
+        });
     }
 
     /// <summary>

@@ -10,6 +10,10 @@
   <ItemGroup>
     <PackageReference Include="Grpc.AspNetCore" Version="2.65.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.8" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.8">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>
 
@@ -18,6 +22,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\..\shared\SmartHotel.Authorization\SmartHotel.Authorization.csproj" />
     <ProjectReference Include="..\SmartHotel.HotelOps.Application\SmartHotel.HotelOps.Application.csproj" />
     <ProjectReference Include="..\SmartHotel.HotelOps.Infrastructure\SmartHotel.HotelOps.Infrastructure.csproj" />
   </ItemGroup>

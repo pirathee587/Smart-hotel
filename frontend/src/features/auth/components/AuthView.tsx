@@ -1,9 +1,16 @@
 "use client";
 
-import React, { useState, useEffect, useId, useMemo, Suspense } from "react";
-import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/axios";
+import Link from "next/link";
+import { useRouter,useSearchParams } from "next/navigation";
+import React,{ useEffect,useEffectEvent,useId,useMemo,useState } from "react";
+
+type GooglePromptNotification = { isNotDisplayed?: () => boolean; isSkippedMoment?: () => boolean };
+type GoogleIdentityApi = {
+  initialize: (options: { client_id: string; callback: (response: { credential?: string }) => void | Promise<void> }) => void;
+  prompt: (callback: (notification: GooglePromptNotification) => void) => void;
+};
+type GoogleWindow = Window & { google?: { accounts?: { id?: GoogleIdentityApi } } };
 import { useAuthStore } from "../store/useAuthStore";
 
 // Real 4-color Google "G" logo SVG
@@ -48,15 +55,16 @@ const COUNTRIES = [
 ];
 
 interface AuthViewProps {
-  mode: "login" | "register";
+  mode?: "login" | "register";
 }
 
-export default function AuthView({ mode }: AuthViewProps) {
+export default function AuthView({ mode = "login" }: AuthViewProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
   const {
     loginCustomer,
     loginWithGoogle,
-    loginEmployee,
     registerCustomer,
     isLoading,
     error,
@@ -66,9 +74,26 @@ export default function AuthView({ mode }: AuthViewProps) {
     initialize,
   } = useAuthStore();
 
-  // Mode & Tabs
-  const isLogin = mode === "login";
-  const [loginTab, setLoginTab] = useState<"guest" | "staff">("guest");
+  // Mode: Toggle between Guest Sign In and Guest Create Account
+  const [authMode, setAuthMode] = useState<"login" | "register">(() => {
+    const m = searchParams.get("mode") || searchParams.get("tab");
+    if (m === "register" || m === "signup") return "register";
+    return mode;
+  });
+  const isLogin = authMode === "login";
+
+  useEffect(() => {
+    const m = searchParams.get("mode") || searchParams.get("tab");
+    if (searchParams.get("role") === "staff" || searchParams.get("staff") === "true") {
+      router.replace("/staff/login");
+      return;
+    }
+    if (m === "register" || m === "signup") {
+      queueMicrotask(() => setAuthMode("register"));
+    } else if (m === "login" || m === "signin") {
+      queueMicrotask(() => setAuthMode("login"));
+    }
+  }, [searchParams, router]);
 
   // Common Form States
   const [email, setEmail] = useState("");
@@ -87,7 +112,7 @@ export default function AuthView({ mode }: AuthViewProps) {
   const [nationality, setNationality] = useState("");
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [signupSuccess, setSignupSuccess] = useState(false);
-  const searchParams = useSearchParams();
+  const [verificationNotice, setVerificationNotice] = useState<string | null>(null);
   const [bookingReference, setBookingReference] = useState("");
   const bookingRefId = useId();
 
@@ -108,10 +133,10 @@ export default function AuthView({ mode }: AuthViewProps) {
     const refParam = searchParams.get("ref");
     const emailParam = searchParams.get("email");
     if (refParam) {
-      setBookingReference(refParam.toUpperCase().trim());
+      queueMicrotask(() => setBookingReference(refParam.toUpperCase().trim()));
     }
     if (emailParam) {
-      setEmail(emailParam.trim());
+      queueMicrotask(() => setEmail(emailParam.trim()));
     }
   }, [searchParams]);
 
@@ -122,23 +147,22 @@ export default function AuthView({ mode }: AuthViewProps) {
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      if (user.userType === "employee") {
-        router.push("/dashboard");
-      } else {
-        router.push("/portal");
-      }
+      router.push("/rooms");
     }
   }, [isAuthenticated, user, router]);
 
-  // Clear errors when switching tabs or modes
+  // Clear errors when switching modes
   useEffect(() => {
-    clearError();
-    setFormError(null);
-  }, [loginTab, mode, clearError]);
+    queueMicrotask(() => {
+      clearError();
+      setFormError(null);
+    });
+  }, [authMode, clearError]);
 
-  // Password strength calculation (matching backend policy: 8+ chars, mixed case, digit, symbol)
+  // Password strength calculation
   const passwordStrength = useMemo(() => {
     if (!password) return { score: 0, text: "" };
+
     let score = 0;
     if (password.length >= 8) score += 1;
     if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score += 1;
@@ -159,39 +183,17 @@ export default function AuthView({ mode }: AuthViewProps) {
   const passwordsMatch = confirmPassword.length > 0 && password === confirmPassword;
   const passwordsMismatch = confirmPassword.length > 0 && password !== confirmPassword;
 
-  // Handle Quick Demo Fill for Staff
-  const handleQuickFill = (role: "admin" | "manager" | "staff") => {
-    clearError();
-    setFormError(null);
-    if (role === "admin") {
-      setEmail("admin@smarthotel.com");
-      setPassword("Admin@123!");
-    } else if (role === "manager") {
-      setEmail("manager@smarthotel.com");
-      setPassword("Manager@123!");
-    } else {
-      setEmail("staff@smarthotel.com");
-      setPassword("Staff@123!");
-    }
-  };
-
   // Google OAuth State & Handler
   const [googleLoading, setGoogleLoading] = useState(false);
 
   const handleAuthResult = (result: { success: boolean; role?: string; error?: string }) => {
     if (result.success) {
-      const role = (result.role || "").toLowerCase();
-      if (role === "admin" || role === "manager") {
-        router.push("/dashboard");
-      } else if (role === "customer" || role === "guest") {
-        router.push("/portal");
-      } else {
-        router.push("/dashboard/tasks");
-      }
+      router.push("/rooms");
     } else {
-      setFormError(result.error || "Your Google account is not registered in the SmartHotel system. Please contact an administrator.");
+      setFormError(result.error || "Google sign-in failed. Please try again or sign in with your email.");
     }
   };
+  const handleGoogleResult = useEffectEvent(handleAuthResult);
 
   useEffect(() => {
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
@@ -206,7 +208,7 @@ export default function AuthView({ mode }: AuthViewProps) {
     script.async = true;
     script.defer = true;
     script.onload = () => {
-      const google = (window as any).google;
+      const google = (window as GoogleWindow).google;
       if (google?.accounts?.id) {
         google.accounts.id.initialize({
           client_id: clientId,
@@ -215,20 +217,20 @@ export default function AuthView({ mode }: AuthViewProps) {
               setGoogleLoading(true);
               const result = await loginWithGoogle(response.credential);
               setGoogleLoading(false);
-              handleAuthResult(result);
+              handleGoogleResult(result);
             }
           },
         });
       }
     };
     document.body.appendChild(script);
-  }, [loginWithGoogle, router]);
+  }, [loginWithGoogle]);
 
   const handleGoogleAuth = async () => {
     clearError();
     setFormError(null);
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-    const google = typeof window !== "undefined" ? (window as any).google : null;
+    const google = typeof window !== "undefined" ? (window as GoogleWindow).google : null;
 
     if (clientId && google?.accounts?.id) {
       setGoogleLoading(true);
@@ -244,7 +246,7 @@ export default function AuthView({ mode }: AuthViewProps) {
           }
         },
       });
-      google.accounts.id.prompt((notification: any) => {
+      google.accounts.id.prompt((notification: GooglePromptNotification) => {
         if (notification?.isNotDisplayed?.() || notification?.isSkippedMoment?.()) {
           setGoogleLoading(false);
         }
@@ -252,26 +254,10 @@ export default function AuthView({ mode }: AuthViewProps) {
       return;
     }
 
-    // Interactive developer prompt for simulated Google Sign-In when NEXT_PUBLIC_GOOGLE_CLIENT_ID is not configured
-    setGoogleLoading(true);
-    const demoEmail = prompt(
-      "Google Sign-In (Development Demo):\nEnter an email address to authenticate with Google:\n• admin@smarthotel.com (Admin)\n• manager@smarthotel.com (Manager)\n• staff@smarthotel.com (Employee)\n• Or any unregistered email to test security rejection:",
-      "admin@smarthotel.com"
-    );
-
-    if (!demoEmail || !demoEmail.trim()) {
-      setGoogleLoading(false);
-      return;
-    }
-
-    const cleanEmail = demoEmail.trim().toLowerCase();
-    const mockToken = `demo_google_token_${Date.now()}:${cleanEmail}`;
-    const result = await loginWithGoogle(mockToken);
-    setGoogleLoading(false);
-    handleAuthResult(result);
+    setFormError("Google Sign-In is not configured for this environment.");
   };
 
-  // Submit Login
+  // Submit Guest Login
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -282,20 +268,15 @@ export default function AuthView({ mode }: AuthViewProps) {
       return;
     }
 
-    if (loginTab === "guest") {
-      const result = await loginCustomer(email, password);
-      if (result.success) {
-        router.push("/portal");
-      }
+    const result = await loginCustomer(email.trim(), password);
+    if (result.success) {
+      router.push("/rooms");
     } else {
-      const result = await loginEmployee(email, password);
-      if (result.success) {
-        router.push("/dashboard");
-      }
+      setFormError(result.error || "Invalid email or password. Please try again.");
     }
   };
 
-  // Submit Registration
+  // Submit Guest Registration
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -322,55 +303,63 @@ export default function AuthView({ mode }: AuthViewProps) {
     }
 
     const result = await registerCustomer({
-      firstName,
-      lastName,
-      email,
-      phone,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: email.trim(),
+      phone: phone.trim(),
       password,
-      nationalId: nationalId || undefined,
-      nationality: nationality || undefined,
+      nationalId: nationalId.trim() || undefined,
+      nationality: nationality.trim() || undefined,
     });
 
     if (result.success) {
-      setSignupSuccess(true);
-      const loginRes = await loginCustomer(email, password);
-      if (loginRes.success) {
-        if (bookingReference.trim()) {
-          try {
-            await api.post("/api/bookings/claim", {
-              bookingReference: bookingReference.trim(),
-              email: email.trim(),
-            });
-          } catch (claimErr) {
-            console.warn("Auto-claim notice:", claimErr);
-          }
-        }
-        setTimeout(() => {
-          router.push("/portal");
-        }, 1200);
+      const needsVerification =
+        result.message?.toLowerCase().includes("check your email") ||
+        result.message?.toLowerCase().includes("verify your account");
+
+      if (needsVerification) {
+        setVerificationNotice(
+          result.message || "Registration successful! Please check your email to verify your account."
+        );
+        setSignupSuccess(false);
       } else {
-        setTimeout(() => {
-          router.push("/login");
-        }, 2000);
+        setSignupSuccess(true);
+        const loginRes = await loginCustomer(email.trim(), password);
+        if (loginRes.success) {
+          if (bookingReference.trim()) {
+            try {
+              await api.post("/api/bookings/claim", {
+                bookingReference: bookingReference.trim(),
+                email: email.trim(),
+              });
+            } catch (claimErr) {
+              console.warn("Auto-claim notice:", claimErr);
+            }
+          }
+          setTimeout(() => {
+            router.push("/rooms");
+          }, 1200);
+        } else {
+          setFormError(loginRes.error || "Registration complete. Please sign in.");
+          setTimeout(() => {
+            setAuthMode("login");
+            setSignupSuccess(false);
+          }, 1500);
+        }
       }
+    } else {
+      setFormError(result.error || "Registration failed. Please try again.");
     }
   };
 
-  // Segment Bar Keyboard Navigation
-  const handleTabKeyDown = (e: React.KeyboardEvent, currentTab: "guest" | "staff") => {
-    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-      e.preventDefault();
-      setLoginTab(currentTab === "guest" ? "staff" : "guest");
-    }
-  };
 
   const activeError = formError || error;
 
   return (
     <div className="min-h-screen w-full bg-[#0F1B1A] text-[#E7EFEC] font-sans antialiased flex flex-col md:grid md:grid-cols-2 lg:grid-cols-[1.08fr_1fr] relative overflow-x-hidden selection:bg-[#C4622D]/30 selection:text-[#E7EFEC]">
-      {/* ── LEFT VISUAL PANEL (Fixed full-height on desktop, elegant hero on mobile) ── */}
+      {/* ── LEFT VISUAL PANEL ── */}
       <div className="relative w-full h-[220px] sm:h-[260px] md:h-screen md:min-h-screen md:sticky md:top-0 overflow-hidden flex flex-col justify-between p-6 sm:p-8 lg:p-12 z-0 shrink-0">
-        {/* Cross-fading background photos (Login: Maskeliya Hillside Slowhouse | Register: Maskeliya Tea Mountain Ridge) */}
+        {/* Cross-fading background photos */}
         <div
           className={`absolute inset-0 bg-cover bg-center transition-opacity duration-700 ease-in-out motion-reduce:transition-none ${
             isLogin ? "opacity-100 z-0" : "opacity-0 -z-10"
@@ -438,7 +427,7 @@ export default function AuthView({ mode }: AuthViewProps) {
         </div>
       </div>
 
-      {/* ── RIGHT FORM PANEL ───────────────────────────────────────────── */}
+      {/* ── RIGHT FORM PANEL ── */}
       <div className="relative w-full flex-1 flex flex-col items-center justify-center px-4 py-8 sm:px-8 lg:px-12 bg-[#0F1B1A] z-10">
         <div className="w-full max-w-[470px] mx-auto flex flex-col gap-5 sm:gap-6">
           {/* Back to Home Navigation Button */}
@@ -467,61 +456,19 @@ export default function AuthView({ mode }: AuthViewProps) {
               className="font-serif text-2xl sm:text-3xl lg:text-[32px] leading-tight font-normal text-[#E7EFEC] tracking-tight"
               style={{ fontFamily: "var(--font-fraunces), serif" }}
             >
-              {isLogin ? "Welcome back" : "Create your account"}
+              {isLogin ? "Guest Sign In" : "Create Guest Account"}
             </h1>
             <p className="text-xs sm:text-sm text-[#9BAFA9] leading-relaxed">
               {isLogin
-                ? "Sign in to manage your stay, or open the staff dashboard."
-                : "Set up guest access to book stays and reach the concierge."}
+                ? "Sign in with your email or Google to manage your sanctuary reservation."
+                : "Register for exclusive member rates, faster checkout, and concierge privileges."}
             </p>
           </div>
 
-          {/* Login Segmented Control (Guest Portal vs Staff & Admin) */}
-          {isLogin && (
-            <div
-              role="tablist"
-              aria-label="Login user type selector"
-              className="grid grid-cols-2 p-1.5 rounded-xl bg-[#16302C]/60 border border-[rgba(231,239,236,0.14)] backdrop-blur-md text-xs sm:text-sm font-medium text-[#9BAFA9]"
-            >
-              <button
-                type="button"
-                role="tab"
-                id="tab-guest"
-                aria-selected={loginTab === "guest"}
-                aria-controls="login-form"
-                tabIndex={loginTab === "guest" ? 0 : -1}
-                onClick={() => setLoginTab("guest")}
-                onKeyDown={(e) => handleTabKeyDown(e, "guest")}
-                className={`py-2.5 px-3 rounded-lg text-center transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C4622D] ${
-                  loginTab === "guest"
-                    ? "bg-[#0F1B1A] text-[#E7EFEC] shadow-md font-semibold border border-[rgba(231,239,236,0.14)]"
-                    : "hover:text-[#E7EFEC] hover:bg-white/[0.04]"
-                }`}
-              >
-                Guest Portal
-              </button>
-              <button
-                type="button"
-                role="tab"
-                id="tab-staff"
-                aria-selected={loginTab === "staff"}
-                aria-controls="login-form"
-                tabIndex={loginTab === "staff" ? 0 : -1}
-                onClick={() => setLoginTab("staff")}
-                onKeyDown={(e) => handleTabKeyDown(e, "staff")}
-                className={`py-2.5 px-3 rounded-lg text-center transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C4622D] ${
-                  loginTab === "staff"
-                    ? "bg-[#0F1B1A] text-[#E7EFEC] shadow-md font-semibold border border-[rgba(231,239,236,0.14)]"
-                    : "hover:text-[#E7EFEC] hover:bg-white/[0.04]"
-                }`}
-              >
-                Staff &amp; Admin
-              </button>
-            </div>
-          )}
 
           {/* Frosted Glass Card Shell */}
           <div
+            id="auth-form-container"
             className="w-full p-6 sm:p-7 rounded-2xl border border-[rgba(231,239,236,0.15)] shadow-2xl backdrop-blur-[16px]"
             style={{ backgroundColor: "rgba(22, 48, 44, 0.42)" }}
           >
@@ -543,7 +490,69 @@ export default function AuthView({ mode }: AuthViewProps) {
                   <line x1="12" y1="8" x2="12" y2="12" />
                   <line x1="12" y1="16" x2="12.01" y2="16" />
                 </svg>
-                <div className="flex-1 leading-snug">{activeError}</div>
+                <div className="flex-1 leading-snug">
+                  <div>{activeError}</div>
+                  {activeError.toLowerCase().includes("verify") && (
+                    <div className="mt-2.5 pt-2 border-t border-red-500/20 flex flex-wrap items-center gap-3">
+                      <Link
+                        href={`/verify-email?email=${encodeURIComponent(email)}`}
+                        className="text-[#E07A3E] font-medium hover:underline text-xs inline-flex items-center gap-1"
+                      >
+                        Enter verification code / link &rarr;
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Inline Email Verification Notice */}
+            {verificationNotice && (
+              <div
+                role="status"
+                className="mb-4 p-4 rounded-xl bg-[#16302C] border border-[#C4622D]/40 text-[#E7EFEC] text-xs sm:text-sm flex flex-col gap-3 animate-in fade-in slide-in-from-top-1 duration-200 shadow-lg"
+              >
+                <div className="flex items-start gap-2.5">
+                  <svg
+                    className="w-5 h-5 text-[#E07A3E] shrink-0 mt-0.5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                    />
+                  </svg>
+                  <div className="flex-1">
+                    <p className="font-medium text-white">{verificationNotice}</p>
+                    <p className="text-xs text-[#9BAFA9] mt-1">
+                      We sent a verification link to <strong className="text-white">{email}</strong>. Please check your inbox or spam folder.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 pt-2 border-t border-white/10">
+                  <Link
+                    href={`/verify-email?email=${encodeURIComponent(email)}`}
+                    className="px-3.5 py-1.5 rounded-lg bg-[#C4622D] hover:bg-[#A84F20] text-white text-xs font-medium transition-colors"
+                  >
+                    Verify Email Now
+                  </Link>
+                  <button
+                    type="button"
+                    suppressHydrationWarning
+                    onClick={() => {
+                      setVerificationNotice(null);
+                      setAuthMode("login");
+                    }}
+                    className="text-xs text-[#9BAFA9] hover:text-white underline"
+                  >
+                    Go to Sign In
+                  </button>
+                </div>
               </div>
             )}
 
@@ -563,13 +572,13 @@ export default function AuthView({ mode }: AuthViewProps) {
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
-                <span>Account created! Redirecting to your stay portal...</span>
+                <span>Account created! Logging in and redirecting...</span>
               </div>
             )}
 
-            {/* FORM: LOGIN */}
+            {/* FORM: GUEST LOGIN */}
             {isLogin ? (
-              <form id="login-form" onSubmit={handleLoginSubmit} className="flex flex-col gap-4 sm:gap-4.5">
+              <form id="login-form" onSubmit={handleLoginSubmit} suppressHydrationWarning className="flex flex-col gap-4 sm:gap-4.5">
                 {/* Email */}
                 <div className="flex flex-col gap-1.5">
                   <label htmlFor={emailId} className="text-xs sm:text-[13px] font-medium text-[#E7EFEC]">
@@ -581,11 +590,10 @@ export default function AuthView({ mode }: AuthViewProps) {
                     name="email"
                     required
                     autoComplete="email"
-                    placeholder={
-                      loginTab === "guest" ? "guest@example.com" : "admin@smarthotel.com"
-                    }
+                    placeholder="guest@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    suppressHydrationWarning
                     className="w-full h-11 sm:h-12 px-4 rounded-xl bg-[#0F1B1A]/75 border border-[rgba(231,239,236,0.15)] text-[#E7EFEC] placeholder-[#9BAFA9]/50 text-sm sm:text-[15px] transition-all focus:outline-none focus:border-[#C4622D] focus:ring-2 focus:ring-[#C4622D]/30"
                   />
                 </div>
@@ -596,12 +604,6 @@ export default function AuthView({ mode }: AuthViewProps) {
                     <label htmlFor={passwordId} className="text-xs sm:text-[13px] font-medium text-[#E7EFEC]">
                       Password
                     </label>
-                    <Link
-                      href="/forgot-password"
-                      className="text-xs text-[#9BAFA9] hover:text-[#E7EFEC] transition-colors focus:outline-none focus-visible:underline"
-                    >
-                      Forgot password?
-                    </Link>
                   </div>
                   <div className="relative">
                     <input
@@ -613,11 +615,13 @@ export default function AuthView({ mode }: AuthViewProps) {
                       placeholder="••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
+                      suppressHydrationWarning
                       className="w-full h-11 sm:h-12 pl-4 pr-16 rounded-xl bg-[#0F1B1A]/75 border border-[rgba(231,239,236,0.15)] text-[#E7EFEC] placeholder-[#9BAFA9]/50 text-sm sm:text-[15px] transition-all focus:outline-none focus:border-[#C4622D] focus:ring-2 focus:ring-[#C4622D]/30"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
+                      suppressHydrationWarning
                       className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#9BAFA9] hover:text-[#E7EFEC] transition-colors px-2 py-1 rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-[#C4622D]"
                       aria-label={showPassword ? "Hide password" : "Show password"}
                     >
@@ -633,6 +637,7 @@ export default function AuthView({ mode }: AuthViewProps) {
                     type="checkbox"
                     checked={rememberMe}
                     onChange={(e) => setRememberMe(e.target.checked)}
+                    suppressHydrationWarning
                     className="w-4 h-4 rounded bg-[#0F1B1A] border-[rgba(231,239,236,0.25)] text-[#C4622D] focus:ring-[#C4622D] focus:ring-offset-0 accent-[#C4622D] cursor-pointer"
                   />
                   <label htmlFor={rememberId} className="text-xs sm:text-[13px] text-[#9BAFA9] select-none cursor-pointer">
@@ -644,6 +649,7 @@ export default function AuthView({ mode }: AuthViewProps) {
                 <button
                   type="submit"
                   disabled={isLoading || signupSuccess}
+                  suppressHydrationWarning
                   className="w-full h-12 sm:h-12.5 mt-1.5 rounded-xl bg-[#C4622D] hover:bg-[#E07A3E] text-[#E7EFEC] text-sm sm:text-base font-semibold tracking-wide transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[#E07A3E] cursor-pointer"
                 >
                   {isLoading ? (
@@ -663,39 +669,7 @@ export default function AuthView({ mode }: AuthViewProps) {
                   )}
                 </button>
 
-                {/* Quick-fill Demo Chips for Staff only */}
-                {loginTab === "staff" && (
-                  <div className="pt-1.5 flex flex-col gap-2">
-                    <span className="text-[11px] text-[#9BAFA9] uppercase tracking-wider font-semibold">
-                      Demo quick-fill
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleQuickFill("admin")}
-                        className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[#16302C] hover:bg-[#16302C]/80 border border-[rgba(231,239,236,0.12)] text-[#E7EFEC] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-[#C4622D]"
-                      >
-                        Admin
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleQuickFill("manager")}
-                        className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[#16302C] hover:bg-[#16302C]/80 border border-[rgba(231,239,236,0.12)] text-[#E7EFEC] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-[#C4622D]"
-                      >
-                        Manager
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleQuickFill("staff")}
-                        className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[#16302C] hover:bg-[#16302C]/80 border border-[rgba(231,239,236,0.12)] text-[#E7EFEC] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-[#C4622D]"
-                      >
-                        Staff
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Labeled Divider */}
+                {/* Labeled Divider & Google OAuth */}
                 <div className="relative flex items-center justify-center my-1">
                   <div className="absolute inset-0 flex items-center">
                     <div className="w-full border-t border-[rgba(231,239,236,0.14)]" />
@@ -705,11 +679,11 @@ export default function AuthView({ mode }: AuthViewProps) {
                   </div>
                 </div>
 
-                {/* Google OAuth Button */}
                 <button
                   type="button"
                   onClick={handleGoogleAuth}
                   disabled={isLoading || googleLoading}
+                  suppressHydrationWarning
                   className="w-full h-11 sm:h-12 px-4 rounded-xl bg-transparent hover:bg-white/[0.04] border border-[rgba(231,239,236,0.18)] hover:border-[rgba(231,239,236,0.35)] text-[#E7EFEC] text-xs sm:text-sm font-medium inline-flex items-center justify-center gap-3 transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C4622D] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {googleLoading ? (
@@ -724,21 +698,10 @@ export default function AuthView({ mode }: AuthViewProps) {
                     </>
                   )}
                 </button>
-
-                {/* Direct Link to Reservation Lookup */}
-                <div className="pt-2 flex flex-col items-center justify-center gap-1.5 text-center border-t border-[rgba(231,239,236,0.08)]">
-                  <Link
-                    href="/booking/lookup"
-                    className="inline-flex items-center gap-1.5 text-xs sm:text-[13px] font-medium text-[#E07A3E] hover:text-[#C4622D] transition-colors focus:outline-none focus-visible:underline"
-                  >
-                    <span>Already booked with us? Find your reservation</span>
-                    <span aria-hidden="true">&rarr;</span>
-                  </Link>
-                </div>
               </form>
             ) : (
-              /* FORM: SIGNUP (GUEST ONLY) */
-              <form onSubmit={handleRegisterSubmit} className="flex flex-col gap-3.5 sm:gap-4">
+              /* FORM: GUEST REGISTRATION */
+              <form onSubmit={handleRegisterSubmit} suppressHydrationWarning className="flex flex-col gap-3.5 sm:gap-4">
                 {/* First Name & Last Name (2 columns) */}
                 <div className="grid grid-cols-2 gap-3 sm:gap-3.5">
                   <div className="flex flex-col gap-1.5">
@@ -753,6 +716,7 @@ export default function AuthView({ mode }: AuthViewProps) {
                       placeholder="Jane"
                       value={firstName}
                       onChange={(e) => setFirstName(e.target.value)}
+                      suppressHydrationWarning
                       className="w-full h-11 sm:h-11.5 px-3.5 rounded-xl bg-[#0F1B1A]/75 border border-[rgba(231,239,236,0.15)] text-[#E7EFEC] placeholder-[#9BAFA9]/50 text-xs sm:text-sm transition-all focus:outline-none focus:border-[#C4622D] focus:ring-2 focus:ring-[#C4622D]/30"
                     />
                   </div>
@@ -768,6 +732,7 @@ export default function AuthView({ mode }: AuthViewProps) {
                       placeholder="Doe"
                       value={lastName}
                       onChange={(e) => setLastName(e.target.value)}
+                      suppressHydrationWarning
                       className="w-full h-11 sm:h-11.5 px-3.5 rounded-xl bg-[#0F1B1A]/75 border border-[rgba(231,239,236,0.15)] text-[#E7EFEC] placeholder-[#9BAFA9]/50 text-xs sm:text-sm transition-all focus:outline-none focus:border-[#C4622D] focus:ring-2 focus:ring-[#C4622D]/30"
                     />
                   </div>
@@ -786,6 +751,7 @@ export default function AuthView({ mode }: AuthViewProps) {
                     placeholder="jane.doe@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    suppressHydrationWarning
                     className="w-full h-11 sm:h-11.5 px-3.5 rounded-xl bg-[#0F1B1A]/75 border border-[rgba(231,239,236,0.15)] text-[#E7EFEC] placeholder-[#9BAFA9]/50 text-xs sm:text-sm transition-all focus:outline-none focus:border-[#C4622D] focus:ring-2 focus:ring-[#C4622D]/30"
                   />
                 </div>
@@ -803,6 +769,7 @@ export default function AuthView({ mode }: AuthViewProps) {
                     placeholder="+1 (555) 000-0000"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
+                    suppressHydrationWarning
                     className="w-full h-11 sm:h-11.5 px-3.5 rounded-xl bg-[#0F1B1A]/75 border border-[rgba(231,239,236,0.15)] text-[#E7EFEC] placeholder-[#9BAFA9]/50 text-xs sm:text-sm transition-all focus:outline-none focus:border-[#C4622D] focus:ring-2 focus:ring-[#C4622D]/30"
                   />
                 </div>
@@ -821,11 +788,13 @@ export default function AuthView({ mode }: AuthViewProps) {
                       placeholder="••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
+                      suppressHydrationWarning
                       className="w-full h-11 sm:h-11.5 pl-3.5 pr-16 rounded-xl bg-[#0F1B1A]/75 border border-[rgba(231,239,236,0.15)] text-[#E7EFEC] placeholder-[#9BAFA9]/50 text-xs sm:text-sm transition-all focus:outline-none focus:border-[#C4622D] focus:ring-2 focus:ring-[#C4622D]/30"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
+                      suppressHydrationWarning
                       className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#9BAFA9] hover:text-[#E7EFEC] transition-colors px-2 py-1 rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-[#C4622D]"
                       aria-label={showPassword ? "Hide password" : "Show password"}
                     >
@@ -877,11 +846,13 @@ export default function AuthView({ mode }: AuthViewProps) {
                       placeholder="••••••••"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
+                      suppressHydrationWarning
                       className="w-full h-11 sm:h-11.5 pl-3.5 pr-16 rounded-xl bg-[#0F1B1A]/75 border border-[rgba(231,239,236,0.15)] text-[#E7EFEC] placeholder-[#9BAFA9]/50 text-xs sm:text-sm transition-all focus:outline-none focus:border-[#C4622D] focus:ring-2 focus:ring-[#C4622D]/30"
                     />
                     <button
                       type="button"
                       onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      suppressHydrationWarning
                       className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#9BAFA9] hover:text-[#E7EFEC] transition-colors px-2 py-1 rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-[#C4622D]"
                       aria-label={showConfirmPassword ? "Hide password" : "Show password"}
                     >
@@ -912,6 +883,7 @@ export default function AuthView({ mode }: AuthViewProps) {
                       placeholder="N12345678"
                       value={nationalId}
                       onChange={(e) => setNationalId(e.target.value)}
+                      suppressHydrationWarning
                       className="w-full h-11 sm:h-11.5 px-3.5 rounded-xl bg-[#0F1B1A]/75 border border-[rgba(231,239,236,0.15)] text-[#E7EFEC] placeholder-[#9BAFA9]/50 text-xs sm:text-sm transition-all focus:outline-none focus:border-[#C4622D] focus:ring-2 focus:ring-[#C4622D]/30"
                     />
                   </div>
@@ -924,6 +896,7 @@ export default function AuthView({ mode }: AuthViewProps) {
                         id={nationalityId}
                         value={nationality}
                         onChange={(e) => setNationality(e.target.value)}
+                        suppressHydrationWarning
                         className="w-full h-11 sm:h-11.5 px-3.5 pr-8 rounded-xl bg-[#0F1B1A]/75 border border-[rgba(231,239,236,0.15)] text-[#E7EFEC] text-xs sm:text-sm transition-all focus:outline-none focus:border-[#C4622D] focus:ring-2 focus:ring-[#C4622D]/30 appearance-none cursor-pointer"
                       >
                         <option value="" className="bg-[#0F1B1A] text-[#9BAFA9]">
@@ -956,10 +929,11 @@ export default function AuthView({ mode }: AuthViewProps) {
                     placeholder="TH-2026-483920"
                     value={bookingReference}
                     onChange={(e) => setBookingReference(e.target.value.toUpperCase())}
+                    suppressHydrationWarning
                     className="w-full h-11 sm:h-11.5 px-3.5 rounded-xl bg-[#0F1B1A]/75 border border-[rgba(231,239,236,0.15)] text-[#E7EFEC] placeholder-[#9BAFA9]/50 text-xs sm:text-sm font-mono uppercase tracking-wider transition-all focus:outline-none focus:border-[#C4622D] focus:ring-2 focus:ring-[#C4622D]/30"
                   />
                   <p className="text-[11px] text-[#9BAFA9] leading-tight">
-                    Booked via Booking.com, Agoda, Expedia, or our website? Enter reference to link your reservation immediately.
+                    Already have a reservation? Enter reference to link it to your new guest profile.
                   </p>
                 </div>
 
@@ -971,18 +945,11 @@ export default function AuthView({ mode }: AuthViewProps) {
                     required
                     checked={agreedToTerms}
                     onChange={(e) => setAgreedToTerms(e.target.checked)}
+                    suppressHydrationWarning
                     className="w-4 h-4 mt-0.5 rounded bg-[#0F1B1A] border-[rgba(231,239,236,0.25)] text-[#C4622D] focus:ring-[#C4622D] focus:ring-offset-0 accent-[#C4622D] cursor-pointer"
                   />
                   <label htmlFor={termsId} className="text-xs text-[#9BAFA9] leading-snug select-none cursor-pointer">
-                    I agree to the{" "}
-                    <Link href="/terms" className="text-[#E7EFEC] underline hover:text-[#E07A3E]">
-                      Terms of Stay
-                    </Link>{" "}
-                    and{" "}
-                    <Link href="/privacy" className="text-[#E7EFEC] underline hover:text-[#E07A3E]">
-                      Data Privacy Policy
-                    </Link>
-                    .
+                    I agree to the Terms of Stay and Privacy Policy.
                   </label>
                 </div>
 
@@ -990,6 +957,7 @@ export default function AuthView({ mode }: AuthViewProps) {
                 <button
                   type="submit"
                   disabled={isLoading || signupSuccess || passwordsMismatch}
+                  suppressHydrationWarning
                   className="w-full h-12 sm:h-12.5 mt-1.5 rounded-xl bg-[#C4622D] hover:bg-[#E07A3E] text-[#E7EFEC] text-sm sm:text-base font-semibold tracking-wide transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[#E07A3E] cursor-pointer"
                 >
                   {isLoading ? (
@@ -1005,7 +973,7 @@ export default function AuthView({ mode }: AuthViewProps) {
                       Creating account...
                     </span>
                   ) : (
-                    "Create account"
+                    "Create guest account"
                   )}
                 </button>
 
@@ -1024,6 +992,7 @@ export default function AuthView({ mode }: AuthViewProps) {
                   type="button"
                   onClick={handleGoogleAuth}
                   disabled={isLoading || googleLoading}
+                  suppressHydrationWarning
                   className="w-full h-11 sm:h-12 px-4 rounded-xl bg-transparent hover:bg-white/[0.04] border border-[rgba(231,239,236,0.18)] hover:border-[rgba(231,239,236,0.35)] text-[#E7EFEC] text-xs sm:text-sm font-medium inline-flex items-center justify-center gap-3 transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C4622D] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {googleLoading ? (
@@ -1043,28 +1012,34 @@ export default function AuthView({ mode }: AuthViewProps) {
           </div>
 
           {/* Bottom Switch Link */}
-          <div className="text-center text-xs sm:text-sm text-[#9BAFA9]">
-            {isLogin ? (
-              <span>
-                New guest?{" "}
-                <Link
-                  href="/register"
-                  className="text-[#E07A3E] hover:text-[#E7EFEC] font-semibold transition-colors focus:outline-none focus-visible:underline"
-                >
-                  Create an account
-                </Link>
-              </span>
-            ) : (
-              <span>
-                Already have an account?{" "}
-                <Link
-                  href="/login"
-                  className="text-[#E07A3E] hover:text-[#E7EFEC] font-semibold transition-colors focus:outline-none focus-visible:underline"
-                >
-                  Sign in
-                </Link>
-              </span>
-            )}
+          <div className="flex flex-col items-center gap-2.5">
+            <div className="text-center text-xs sm:text-sm text-[#9BAFA9]">
+              {isLogin ? (
+                <span>
+                  Don&apos;t have an account yet?{" "}
+                  <button
+                    type="button"
+                    onClick={() => setAuthMode("register")}
+                    suppressHydrationWarning
+                    className="text-[#E07A3E] hover:text-[#E7EFEC] font-semibold transition-colors focus:outline-none underline cursor-pointer"
+                  >
+                    Create a guest account
+                  </button>
+                </span>
+              ) : (
+                <span>
+                  Already have a guest account?{" "}
+                  <button
+                    type="button"
+                    onClick={() => setAuthMode("login")}
+                    suppressHydrationWarning
+                    className="text-[#E07A3E] hover:text-[#E7EFEC] font-semibold transition-colors focus:outline-none underline cursor-pointer"
+                  >
+                    Sign in here
+                  </button>
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>

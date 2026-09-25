@@ -17,6 +17,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY smarthotel-concierge/ .
 
+RUN groupadd --system smarthotel && useradd --system --gid smarthotel --home /app smarthotel \
+    && chown -R smarthotel:smarthotel /app
+
+USER smarthotel
+
 EXPOSE 5005
 
 HEALTHCHECK --interval=10s --timeout=5s --retries=5 --start-period=10s \

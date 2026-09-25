@@ -12,7 +12,7 @@ public interface IAuthService
     Task<Result> ResendVerificationEmailAsync(string email, CancellationToken ct = default);
     Task<Result<ForgotPasswordResponse>> ForgotPasswordAsync(string email, CancellationToken ct = default);
     Task<Result> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken ct = default);
-    Task<Result> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword, bool isMustChangePasswordScope, CancellationToken ct = default);
+    Task<Result<LoginResponse>> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword, bool isMustChangePasswordScope, CancellationToken ct = default);
     Task<Result<RequestMagicLinkResponse>> RequestMagicLinkAsync(RequestMagicLinkCommand command, CancellationToken ct = default);
     Task<Result<LoginResponse>> VerifyMagicLinkAsync(VerifyMagicLinkCommand command, CancellationToken ct = default);
     Task<Result<LoginResponse>> GoogleLoginAsync(GoogleLoginRequest request, CancellationToken ct = default);

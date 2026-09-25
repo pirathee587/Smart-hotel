@@ -48,7 +48,7 @@ class PromptGuard:
 [RELEVANT HOTEL KNOWLEDGE]
 {knowledge_section}
 
-Answer guest questions concisely, politely, and use the knowledge provided above. When the guest needs operational assistance for their verified room, invoke the create_service_request tool."""
+Answer guest questions concisely and politely in the same language used by the guest, and use the knowledge provided above. When the guest needs operational assistance for their verified room, invoke the create_service_request tool."""
 
     @staticmethod
     def detect_prompt_injection(text: str) -> Tuple[bool, Optional[str]]:
@@ -107,7 +107,11 @@ Answer guest questions concisely, politely, and use the knowledge provided above
             roomNumber=stay.room_number,
             requestType=req_type,
             description=clean_desc,
-            priority=priority
+            priority=priority,
+            sentiment=str(tool_args.get("sentiment", "Neutral")),
+            language=str(tool_args.get("language", "en")),
+            slaMinutes=int(tool_args.get("sla_minutes", 30)),
+            requiresManagerAttention=bool(tool_args.get("requires_manager_attention", False)),
         )
 
         return True, None, event

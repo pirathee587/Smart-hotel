@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using SmartHotel.Booking.Application.Features.Reviews.Commands;
 using SmartHotel.Booking.Application.Features.Reviews.DTOs;
 using SmartHotel.Booking.Application.Features.Reviews.Queries;
+using SmartHotel.Authorization;
 
 namespace SmartHotel.Booking.API.Controllers;
 
@@ -55,7 +56,7 @@ public class ReviewsController : ControllerBase
     /// List all reviews for staff moderation.
     /// </summary>
     [HttpGet]
-    [Authorize(Roles = "Admin,Manager")]
+    [Authorize(Policy = HotelPolicies.FrontOfficeManagement)]
     [ProducesResponseType(typeof(List<ReviewDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAllReviews([FromQuery] bool? isPublished, CancellationToken ct)
     {
@@ -67,7 +68,7 @@ public class ReviewsController : ControllerBase
     /// Hide an inappropriate review from public display (Admin/Manager only).
     /// </summary>
     [HttpPost("{id:guid}/hide")]
-    [Authorize(Roles = "Admin,Manager")]
+    [Authorize(Policy = HotelPolicies.FrontOfficeManagement)]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> HideReview(Guid id, CancellationToken ct)
@@ -85,7 +86,7 @@ public class ReviewsController : ControllerBase
     /// Unhide a previously hidden review (Admin/Manager only).
     /// </summary>
     [HttpPost("{id:guid}/unhide")]
-    [Authorize(Roles = "Admin,Manager")]
+    [Authorize(Policy = HotelPolicies.FrontOfficeManagement)]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UnhideReview(Guid id, CancellationToken ct)

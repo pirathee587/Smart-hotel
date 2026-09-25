@@ -29,7 +29,7 @@ public class CapacityAndRoomValidationTests
 
         var fakeClient = new FakeHotelOpsClient
         {
-            RoomType = new RoomTypeInfo(_roomTypeId, "Single Standard", 12000m, 1500m, 1000m, Capacity: 1, IsPublished: true, IsActive: true),
+            RoomType = new RoomTypeInfo(_roomTypeId, "Single Standard", 12000m, 1500m, 1000m, Capacity: 1, IsPublished: true, IsActive: true, Currency: "LKR"),
             Room = new RoomInfo(_roomId, _roomTypeId, "101", 1, "Clean")
         };
 
@@ -61,7 +61,7 @@ public class CapacityAndRoomValidationTests
 
         var fakeClient = new FakeHotelOpsClient
         {
-            RoomType = new RoomTypeInfo(_roomTypeId, "Executive Penthouse", 85000m, 5000m, 5000m, Capacity: 4, IsPublished: false, IsActive: true),
+            RoomType = new RoomTypeInfo(_roomTypeId, "Executive Penthouse", 85000m, 5000m, 5000m, Capacity: 4, IsPublished: false, IsActive: true, Currency: "LKR"),
             Room = new RoomInfo(_roomId, _roomTypeId, "501", 5, "Clean")
         };
 
@@ -93,7 +93,7 @@ public class CapacityAndRoomValidationTests
 
         var fakeClient = new FakeHotelOpsClient
         {
-            RoomType = new RoomTypeInfo(_roomTypeId, "Deluxe Double", 25000m, 2000m, 1500m, Capacity: 2, IsPublished: true, IsActive: true),
+            RoomType = new RoomTypeInfo(_roomTypeId, "Deluxe Double", 25000m, 2000m, 1500m, Capacity: 2, IsPublished: true, IsActive: true, Currency: "LKR"),
             Room = null // Room does not exist in Hotel Ops
         };
 

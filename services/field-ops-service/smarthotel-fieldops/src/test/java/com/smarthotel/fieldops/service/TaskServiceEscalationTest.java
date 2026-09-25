@@ -2,6 +2,8 @@ package com.smarthotel.fieldops.service;
 
 import com.smarthotel.fieldops.domain.model.EmployeeProfile;
 import com.smarthotel.fieldops.domain.model.StaffTask;
+import com.smarthotel.fieldops.domain.model.HousekeepingTask;
+import com.smarthotel.fieldops.domain.model.MaintenanceWorkOrder;
 import com.smarthotel.fieldops.domain.model.enums.TaskEnums.TaskPriority;
 import com.smarthotel.fieldops.domain.model.enums.TaskEnums.TaskRole;
 import com.smarthotel.fieldops.domain.model.enums.TaskEnums.TaskStatus;
@@ -9,6 +11,7 @@ import com.smarthotel.fieldops.domain.repository.EmployeeProfileRepository;
 import com.smarthotel.fieldops.domain.repository.HousekeepingTaskRepository;
 import com.smarthotel.fieldops.domain.repository.MaintenanceWorkOrderRepository;
 import com.smarthotel.fieldops.domain.repository.StaffTaskRepository;
+import com.smarthotel.fieldops.domain.repository.TaskAuditLogRepository;
 import com.smarthotel.fieldops.messaging.TaskEventPublisher;
 import com.smarthotel.fieldops.service.allocation.AllocationEngine;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Optional;
 import java.util.UUID;
+import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -45,6 +49,9 @@ class TaskServiceEscalationTest {
 
     @Mock
     private TaskEventPublisher taskEventPublisher;
+    @Mock private TaskAuditLogRepository taskAuditLogRepository;
+    @Mock private RoomReadinessClient roomReadinessClient;
+    @Mock private MaintenanceIntegrationClient maintenanceIntegrationClient;
 
     private TaskService taskService;
 
@@ -56,8 +63,24 @@ class TaskServiceEscalationTest {
                 maintenanceWorkOrderRepository,
                 employeeProfileRepository,
                 allocationEngine,
-                taskEventPublisher
+                taskEventPublisher,
+                taskAuditLogRepository,
+                roomReadinessClient,
+                maintenanceIntegrationClient
         );
+    }
+
+    @Test
+    void verifiedMaintenanceCost_IsSubmittedOnceToFinance() {
+        UUID id=UUID.randomUUID(),department=UUID.randomUUID(),manager=UUID.randomUUID(),expense=UUID.randomUUID();
+        MaintenanceWorkOrder order=MaintenanceWorkOrder.builder().id(id).title("Repair AC").requiredRole(TaskRole.Maintenance).departmentId(department).roomId(UUID.randomUUID()).assetName("AC").status(TaskStatus.InspectionApproved).actualCost(new BigDecimal("2500")).estimatedCost(new BigDecimal("2000")).build();
+        when(staffTaskRepository.findLockedById(id)).thenReturn(Optional.of(order));
+        when(maintenanceIntegrationClient.submitExpense(eq(id),eq(department),any(),any(),eq("LKR"),anyString(),eq("Bearer token"))).thenReturn(new MaintenanceIntegrationClient.FinanceExpenseResult(expense,"Pending"));
+        when(maintenanceWorkOrderRepository.save(any())).thenAnswer(i->i.getArgument(0));
+        taskService.approveMaintenanceCost(id,manager,department,"LKR","Bearer token");
+        taskService.approveMaintenanceCost(id,manager,department,"LKR","Bearer token");
+        verify(maintenanceIntegrationClient,times(1)).submitExpense(eq(id),eq(department),any(),any(),eq("LKR"),anyString(),eq("Bearer token"));
+        assertThat(order.getFinanceExpenseId()).isEqualTo(expense);
     }
 
     @Test
@@ -110,7 +133,7 @@ class TaskServiceEscalationTest {
     }
 
     @Test
-    @DisplayName("Staff accepts assigned task -> status changes to InProgress")
+    @DisplayName("Staff accepts assigned task -> status changes to Accepted")
     void acceptTask_TransitionsToInProgress() {
         UUID taskId = UUID.randomUUID();
         UUID empId = UUID.randomUUID();
@@ -128,7 +151,15 @@ class TaskServiceEscalationTest {
 
         StaffTask accepted = taskService.acceptTask(taskId, empId);
 
-        assertThat(accepted.getStatus()).isEqualTo(TaskStatus.InProgress);
+        assertThat(accepted.getStatus()).isEqualTo(TaskStatus.Accepted);
+    }
+
+    @Test
+    void duplicateCheckoutEventReturnsExistingTurnoverTaskWithoutCreatingAnother() {
+        UUID eventId=UUID.randomUUID(); HousekeepingTask existing=HousekeepingTask.builder().id(UUID.randomUUID()).title("Existing turnover").requiredRole(TaskRole.Housekeeper).departmentId(UUID.randomUUID()).checkoutEventId(eventId).build();
+        when(housekeepingTaskRepository.findByCheckoutEventId(eventId)).thenReturn(Optional.of(existing));
+        HousekeepingTask result=taskService.createTurnoverTask(HousekeepingTask.builder().title("Duplicate").requiredRole(TaskRole.Housekeeper).departmentId(existing.getDepartmentId()).build(),eventId,true);
+        assertThat(result).isSameAs(existing); verify(housekeepingTaskRepository,never()).save(any()); verifyNoInteractions(taskAuditLogRepository);
     }
 
     @Test

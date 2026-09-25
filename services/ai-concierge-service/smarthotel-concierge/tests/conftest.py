@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.config import settings
 from app.auth.jwks import jwks_manager
+from app.database import db_manager
 from app.rag.vector_store import knowledge_store
 from app.services.rate_limiter import customer_rate_limiter
 from app.clients.rabbitmq_client import rabbitmq_publisher
@@ -58,6 +59,10 @@ def setup_test_environment():
 
     # 4. Initialize knowledge store
     knowledge_store.initialize()
+
+    # 5. Reset database manager for test isolation
+    db_manager.reset_for_testing()
+
 
 
 @pytest.fixture

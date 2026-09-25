@@ -6,10 +6,13 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface HousekeepingTaskRepository extends JpaRepository<HousekeepingTask, UUID> {
     List<HousekeepingTask> findByRoomIdAndStatus(UUID roomId, TaskStatus status);
     List<HousekeepingTask> findByStatus(TaskStatus status);
+    Optional<HousekeepingTask> findByCheckoutEventId(UUID checkoutEventId);
+    Optional<HousekeepingTask> findByConciergeEventId(UUID conciergeEventId);
 }

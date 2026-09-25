@@ -19,4 +19,5 @@ message RoomTypeAvailabilityResponse {
   double price_per_night = 4;
   double cleaning_fee = 5;
   double amenities_fee = 6;
+  string currency = 7;
 }

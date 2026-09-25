@@ -6,6 +6,7 @@ using SmartHotel.Booking.Application.Features.Complaints.Commands;
 using SmartHotel.Booking.Application.Features.Complaints.DTOs;
 using SmartHotel.Booking.Application.Features.Complaints.Queries;
 using SmartHotel.Booking.Domain.Enums;
+using SmartHotel.Authorization;
 
 namespace SmartHotel.Booking.API.Controllers;
 
@@ -15,10 +16,12 @@ namespace SmartHotel.Booking.API.Controllers;
 public class ComplaintsController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly IAuthorizationService _authorization;
 
-    public ComplaintsController(IMediator mediator)
+    public ComplaintsController(IMediator mediator, IAuthorizationService authorization)
     {
         _mediator = mediator;
+        _authorization = authorization;
     }
 
     /// <summary>
@@ -67,7 +70,7 @@ public class ComplaintsController : ControllerBase
     /// List complaints with optional status/severity filters or overdue SLA filter (Staff/Admin).
     /// </summary>
     [HttpGet]
-    [Authorize(Roles = "Admin,Manager,Receptionist")]
+    [Authorize(Policy = HotelPolicies.FrontOfficeOperations)]
     [ProducesResponseType(typeof(List<ComplaintDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetComplaints(
         [FromQuery] ComplaintStatus? status,
@@ -94,10 +97,10 @@ public class ComplaintsController : ControllerBase
             return NotFound(new { message = result.Message });
         }
 
-        var isStaff = User.IsInRole("Admin") || User.IsInRole("Manager") || User.IsInRole("Receptionist");
+        var isStaff = (await _authorization.AuthorizeAsync(User, HotelPolicies.FrontOfficeOperations)).Succeeded;
         var customerId = GetCurrentUserId();
 
-        if (!isStaff && customerId.HasValue && result.Data!.CustomerId != customerId.Value)
+        if (!isStaff && (!customerId.HasValue || result.Data!.CustomerId != customerId.Value))
         {
             return Forbid();
         }
@@ -109,7 +112,7 @@ public class ComplaintsController : ControllerBase
     /// Update complaint status, resolve with notes, escalate, or close (Staff/Admin).
     /// </summary>
     [HttpPatch("{id:guid}/status")]
-    [Authorize(Roles = "Admin,Manager,Receptionist")]
+    [Authorize(Policy = HotelPolicies.FrontOfficeOperations)]
     [ProducesResponseType(typeof(ComplaintDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]

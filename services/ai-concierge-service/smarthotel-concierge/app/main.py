@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
+from app.database import db_manager
 from app.rag.vector_store import knowledge_store
 from app.clients.rabbitmq_client import rabbitmq_publisher
 from app.api.routes import router as concierge_router
@@ -17,6 +18,11 @@ logger = logging.getLogger("smarthotel-concierge")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.SERVICE_NAME} on port {settings.PORT}...")
+    try:
+        db_manager.initialize()
+    except Exception as e:
+        logger.warning(f"Database initialization warning: {e}")
+
     try:
         knowledge_store.initialize()
     except Exception as e:
@@ -34,6 +40,11 @@ async def lifespan(app: FastAPI):
         await rabbitmq_publisher.close()
     except Exception as e:
         logger.warning(f"RabbitMQ shutdown cleanup error: {e}")
+
+    try:
+        db_manager.close()
+    except Exception as e:
+        logger.warning(f"Database shutdown cleanup error: {e}")
 
 
 app = FastAPI(

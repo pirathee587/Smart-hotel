@@ -35,15 +35,34 @@ public class JwtTokenService : IJwtTokenService
         {
             claims.Add(new Claim(ClaimTypes.Role, employee.Role.ToString()));
             claims.Add(new Claim("role", employee.Role.ToString()));
-            if (employee.DepartmentId.HasValue)
+            if (employee.DepartmentId != Guid.Empty)
             {
-                claims.Add(new Claim("departmentId", employee.DepartmentId.Value.ToString()));
+                claims.Add(new Claim("departmentId", employee.DepartmentId.ToString()));
             }
+            if (!string.IsNullOrWhiteSpace(employee.Department?.Name))
+            {
+                claims.Add(new Claim("departmentName", employee.Department.Name));
+                claims.Add(new Claim("departmentCode", new string(employee.Department.Name
+                    .Where(char.IsLetterOrDigit).Select(char.ToUpperInvariant).ToArray())));
+            }
+            if (!string.IsNullOrWhiteSpace(employee.Designation)) claims.Add(new Claim("designation", employee.Designation));
+            if (employee.RequiresProfileCompletion && !employee.HasCompletedRequiredProfile())
+            {
+                claims.Add(new Claim("profile_incomplete", "true"));
+                if (employee.ProfileCompletionDeadlineUtc.HasValue)
+                    claims.Add(new Claim("profile_completion_deadline", employee.ProfileCompletionDeadlineUtc.Value.ToString("O")));
+            }
+        }
+        else if (person is Customer customer)
+        {
+            claims.Add(new Claim(ClaimTypes.Role, customer.Role.ToString()));
+            claims.Add(new Claim("role", customer.Role.ToString()));
         }
         else
         {
-            claims.Add(new Claim(ClaimTypes.Role, "Customer"));
-            claims.Add(new Claim("role", "Customer"));
+            // Fallback for any other Person subtype
+            claims.Add(new Claim(ClaimTypes.Role, "Guest"));
+            claims.Add(new Claim("role", "Guest"));
         }
 
         if (mustChangePassword)

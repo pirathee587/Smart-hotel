@@ -9,19 +9,30 @@ public class AuthUserInfo
     public string LastName { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public Guid? DepartmentId { get; set; }
+    public string? DepartmentName { get; set; }
+    public string? DepartmentCode { get; set; }
+    public string? Designation { get; set; }
 }
 
 public class LoginResponse
 {
     public string AccessToken { get; set; } = string.Empty;
     public string Token { get; set; } = string.Empty;
+    public string? RefreshToken { get; set; }
     public string TokenType { get; set; } = "Bearer";
     public int ExpiresIn { get; set; }
     public bool MustChangePassword { get; set; }
+    public bool ProfileCompletionRequired { get; set; }
+    public DateTime? ProfileCompletionDeadlineUtc { get; set; }
     public AuthUserInfo User { get; set; } = new();
     public Guid CustomerId => User?.Id ?? Guid.Empty;
     public string FullName => User != null ? (!string.IsNullOrEmpty(User.Name) ? User.Name : $"{User.FirstName} {User.LastName}".Trim()) : string.Empty;
     public string ExpiresAt => DateTime.UtcNow.AddSeconds(ExpiresIn > 0 ? ExpiresIn : 3600).ToString("o");
+}
+
+public class RefreshTokenRequest
+{
+    public string RefreshToken { get; set; } = string.Empty;
 }
 
 public class GoogleLoginRequest

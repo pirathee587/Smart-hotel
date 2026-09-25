@@ -169,11 +169,11 @@ public class Program
             var db = scope.ServiceProvider.GetRequiredService<NotificationsDbContext>();
             try
             {
-                db.Database.EnsureCreated();
+                db.Database.Migrate();
             }
             catch (Exception ex)
             {
-                app.Logger.LogWarning(ex, "Could not run EnsureCreated on startup (database might still be initializing).");
+                app.Logger.LogWarning(ex, "Could not apply database migrations on startup (database might still be initializing).");
             }
         }
 

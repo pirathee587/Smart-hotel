@@ -1,6 +1,6 @@
-import { Suspense } from "react";
-import { Metadata } from "next";
 import AuthView from "@/features/auth/components/AuthView";
+import { Metadata } from "next";
+import { Suspense } from "react";
 
 export const metadata: Metadata = {
   title: "Sign in — SmartHotel Maskeliya",

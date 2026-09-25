@@ -149,4 +149,14 @@ public class RouteAuthorizationTests : IClassFixture<CustomGatewayFactory>
         // Assert: Gateway validates JWT and proxies to downstream
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
+
+    [Theory]
+    [InlineData("/api/v1/finance/operations/transactions")]
+    [InlineData("/api/v1/finance/audit")]
+    [InlineData("/api/v1/escrow/releases")]
+    public async Task FinancialRoutes_WithoutJwt_AreRejectedAtGateway(string path)
+    {
+        var response = await _client.GetAsync(path);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
 }

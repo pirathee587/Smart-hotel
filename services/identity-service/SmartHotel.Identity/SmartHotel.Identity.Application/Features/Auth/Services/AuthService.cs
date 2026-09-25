@@ -18,6 +18,7 @@ public class AuthService : IAuthService
     private readonly IEmailService _emailService;
     private readonly IRateLimiterService _rateLimiter;
     private readonly IConfiguration? _configuration;
+    private readonly ITokenService? _tokenService;
 
     public AuthService(
         IAppDbContext dbContext,
@@ -25,7 +26,8 @@ public class AuthService : IAuthService
         IJwtTokenService jwtTokenService,
         IEmailService emailService,
         IRateLimiterService rateLimiter,
-        IConfiguration? configuration = null)
+        IConfiguration? configuration = null,
+        ITokenService? tokenService = null)
     {
         _dbContext = dbContext;
         _passwordHasher = passwordHasher;
@@ -33,6 +35,7 @@ public class AuthService : IAuthService
         _emailService = emailService;
         _rateLimiter = rateLimiter;
         _configuration = configuration;
+        _tokenService = tokenService;
     }
 
     public async Task<Result<CustomerRegistrationResponse>> RegisterCustomerAsync(RegisterCustomerRequest request, CancellationToken ct = default)
@@ -55,6 +58,7 @@ public class AuthService : IAuthService
 
         // 3. Generate verification token
         var verificationToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        var autoVerify = !string.Equals(_configuration?["Smtp:AutoVerifyInDev"], "false", StringComparison.OrdinalIgnoreCase);
 
         var customer = new Customer
         {
@@ -66,28 +70,47 @@ public class AuthService : IAuthService
             Nationality = request.Nationality?.Trim(),
             PreferredLanguage = string.IsNullOrWhiteSpace(request.PreferredLanguage) ? "en" : request.PreferredLanguage.Trim(),
             IsActive = true,
-            EmailVerified = false,
-            EmailVerificationToken = verificationToken,
-            EmailVerificationTokenExpiresAtUtc = DateTime.UtcNow.AddHours(24)
+            EmailVerified = autoVerify,
+            EmailVerificationToken = autoVerify ? null : verificationToken,
+            EmailVerificationTokenExpiresAtUtc = autoVerify ? null : DateTime.UtcNow.AddHours(24)
         };
 
         _dbContext.Customers.Add(customer);
         await _dbContext.SaveChangesAsync(ct);
 
-        // 4. Send verification email
-        await _emailService.SendEmailVerificationAsync(
-            customer.Email,
-            $"{customer.FirstName} {customer.LastName}",
-            verificationToken,
-            customer.PreferredLanguage,
-            ct);
+        // 4. Send verification email (only when email verification is required)
+        string? emailError = null;
+        if (!autoVerify)
+        {
+            try
+            {
+                await _emailService.SendEmailVerificationAsync(
+                    customer.Email,
+                    $"{customer.FirstName} {customer.LastName}",
+                    verificationToken,
+                    customer.PreferredLanguage,
+                    ct);
+            }
+            catch (Exception ex)
+            {
+                // Email failure is non-fatal — account is already created.
+                // Surface the error detail so SMTP issues are easily diagnosed.
+                emailError = ex.Message;
+            }
+        }
+
+        var registrationMessage = autoVerify
+            ? "Registration successful. Your account is verified and ready."
+            : emailError != null
+                ? $"Registration successful. However, the verification email could not be sent ({emailError}). Please use 'Resend Verification' or check server logs for the verification link."
+                : "Registration successful. Please check your email to verify your account.";
 
         return Result<CustomerRegistrationResponse>.Success(
             new CustomerRegistrationResponse
             {
                 CustomerId = customer.Id,
                 Email = customer.Email,
-                Message = "Registration successful. Please check your email to verify your account."
+                Message = registrationMessage
             },
             "Registration successful.");
     }
@@ -114,17 +137,31 @@ public class AuthService : IAuthService
 
         if (!customer.EmailVerified)
         {
-            return Result<LoginResponse>.Failure("Email is not verified. Please check your inbox for the verification link.");
+            var autoVerify = !string.Equals(_configuration?["Smtp:AutoVerifyInDev"], "false", StringComparison.OrdinalIgnoreCase);
+            if (autoVerify)
+            {
+                customer.EmailVerified = true;
+                customer.EmailVerificationToken = null;
+                customer.EmailVerificationTokenExpiresAtUtc = null;
+                customer.UpdatedAtUtc = DateTime.UtcNow;
+                await _dbContext.SaveChangesAsync(ct);
+            }
+            else
+            {
+                return Result<LoginResponse>.Failure("Email is not verified. Please check your inbox for the verification link.");
+            }
         }
 
-        var accessToken = _jwtTokenService.GenerateAccessToken(customer, mustChangePassword: false);
+        var issuedTokens = await IssueStandardTokensAsync(customer, ct);
+        var accessToken = issuedTokens.AccessToken;
 
         var response = new LoginResponse
         {
             AccessToken = accessToken,
             Token = accessToken,
+            RefreshToken = issuedTokens.RefreshToken,
             TokenType = "Bearer",
-            ExpiresIn = 3600,
+            ExpiresIn = issuedTokens.ExpiresInSeconds,
             MustChangePassword = false,
             User = new AuthUserInfo
             {
@@ -133,7 +170,7 @@ public class AuthService : IAuthService
                 Email = customer.Email,
                 FirstName = customer.FirstName,
                 LastName = customer.LastName,
-                Role = "Customer"
+                Role = customer.Role.ToString()
             }
         };
 
@@ -158,9 +195,30 @@ public class AuthService : IAuthService
             return Result<LoginResponse>.Failure("Invalid email or password.");
         }
 
+        if (employee.RequiresProfileCompletion && !employee.HasCompletedRequiredProfile() &&
+            employee.ProfileCompletionDeadlineUtc <= DateTime.UtcNow)
+        {
+            employee.IsActive = false;
+            employee.SuspensionReason = "Required profile details were not completed within two days.";
+            employee.SuspendedAtUtc = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync(ct);
+            return Result<LoginResponse>.Failure("Credentials disabled because the required profile details were not completed within two days. Please contact the owner.");
+        }
+
         if (!employee.IsActive)
         {
             return Result<LoginResponse>.Failure("Account is deactivated. Please contact administrator.");
+        }
+
+        // Block employees whose approval is pending or who have been rejected
+        if (employee.Status == Domain.Enums.EmployeeStatus.PendingApproval)
+        {
+            return Result<LoginResponse>.Failure("Your account is pending administrator approval. You will be notified once approved.");
+        }
+
+        if (employee.Status == Domain.Enums.EmployeeStatus.Rejected)
+        {
+            return Result<LoginResponse>.Failure("Your account application was not approved. Please contact the hotel administrator.");
         }
 
         if (!employee.EmailVerified)
@@ -186,22 +244,29 @@ public class AuthService : IAuthService
                     FirstName = employee.FirstName,
                     LastName = employee.LastName,
                     Role = employee.Role.ToString(),
-                    DepartmentId = employee.DepartmentId
+                    DepartmentId = employee.DepartmentId,
+                    DepartmentName = employee.Department?.Name,
+                    DepartmentCode = ToDepartmentCode(employee.Department?.Name)
+                    ,Designation = employee.Designation
                 }
             };
 
             return Result<LoginResponse>.Success(restrictedResponse, "Password change required. Temporary token issued.");
         }
 
-        var accessToken = _jwtTokenService.GenerateAccessToken(employee, mustChangePassword: false);
+        var issuedTokens = await IssueStandardTokensAsync(employee, ct);
+        var accessToken = issuedTokens.AccessToken;
 
         var response = new LoginResponse
         {
             AccessToken = accessToken,
             Token = accessToken,
+            RefreshToken = issuedTokens.RefreshToken,
             TokenType = "Bearer",
-            ExpiresIn = 3600,
+            ExpiresIn = issuedTokens.ExpiresInSeconds,
             MustChangePassword = false,
+            ProfileCompletionRequired = employee.RequiresProfileCompletion && !employee.HasCompletedRequiredProfile(),
+            ProfileCompletionDeadlineUtc = employee.ProfileCompletionDeadlineUtc,
             User = new AuthUserInfo
             {
                 Id = employee.Id,
@@ -210,11 +275,20 @@ public class AuthService : IAuthService
                 FirstName = employee.FirstName,
                 LastName = employee.LastName,
                 Role = employee.Role.ToString(),
-                DepartmentId = employee.DepartmentId
+                DepartmentId = employee.DepartmentId,
+                DepartmentName = employee.Department?.Name,
+                DepartmentCode = ToDepartmentCode(employee.Department?.Name)
+                ,Designation = employee.Designation
             }
         };
 
         return Result<LoginResponse>.Success(response);
+    }
+
+    private static string? ToDepartmentCode(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        return new string(name.Where(char.IsLetterOrDigit).Select(char.ToUpperInvariant).ToArray());
     }
 
     public async Task<Result> VerifyEmailAsync(string email, string token, CancellationToken ct = default)
@@ -345,16 +419,21 @@ public class AuthService : IAuthService
             employee.MustChangePassword = false;
         }
 
+        if (_tokenService != null)
+        {
+            await _tokenService.RevokeAllAsync(person.Id, ct);
+        }
+
         await _dbContext.SaveChangesAsync(ct);
         return Result.Success("Password reset successfully. You can now log in with your new password.");
     }
 
-    public async Task<Result> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword, bool isMustChangePasswordScope, CancellationToken ct = default)
+    public async Task<Result<LoginResponse>> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword, bool isMustChangePasswordScope, CancellationToken ct = default)
     {
         var person = await _dbContext.Persons.FirstOrDefaultAsync(p => p.Id == userId, ct);
         if (person == null)
         {
-            return Result.Failure("User not found.");
+            return Result<LoginResponse>.Failure("User not found.");
         }
 
         // If user is NOT under MustChangePassword temporary scope, verify their current password
@@ -362,14 +441,14 @@ public class AuthService : IAuthService
         {
             if (string.IsNullOrEmpty(currentPassword) || !_passwordHasher.VerifyPassword(currentPassword, person.PasswordHash))
             {
-                return Result.Failure("Current password is incorrect.");
+                return Result<LoginResponse>.Failure("Current password is incorrect.");
             }
         }
 
         var policyResult = PasswordPolicy.Validate(newPassword, person.FirstName, person.LastName, person.Email);
         if (!policyResult.IsValid)
         {
-            return Result.Failure("Password validation failed.", policyResult.Errors);
+            return Result<LoginResponse>.Failure("Password validation failed.", policyResult.Errors);
         }
 
         person.PasswordHash = _passwordHasher.HashPassword(newPassword);
@@ -378,10 +457,43 @@ public class AuthService : IAuthService
         if (person is Employee employee)
         {
             employee.MustChangePassword = false;
+            if (employee.RequiresProfileCompletion && !employee.HasCompletedRequiredProfile())
+                employee.ProfileCompletionDeadlineUtc ??= DateTime.UtcNow.AddDays(2);
         }
 
         await _dbContext.SaveChangesAsync(ct);
-        return Result.Success("Password changed successfully.");
+
+        if (_tokenService != null)
+        {
+            await _tokenService.RevokeAllAsync(person.Id, ct);
+        }
+
+        // Generate full-privilege token without must_change_password restriction
+        var issuedTokens = await IssueStandardTokensAsync(person, ct);
+        var accessToken = issuedTokens.AccessToken;
+        var response = new LoginResponse
+        {
+            AccessToken = accessToken,
+            Token = accessToken,
+            RefreshToken = issuedTokens.RefreshToken,
+            TokenType = "Bearer",
+            ExpiresIn = issuedTokens.ExpiresInSeconds,
+            MustChangePassword = false,
+            ProfileCompletionRequired = person is Employee profileEmployee && profileEmployee.RequiresProfileCompletion && !profileEmployee.HasCompletedRequiredProfile(),
+            ProfileCompletionDeadlineUtc = (person as Employee)?.ProfileCompletionDeadlineUtc,
+            User = new AuthUserInfo
+            {
+                Id = person.Id,
+                Name = $"{person.FirstName} {person.LastName}".Trim(),
+                Email = person.Email,
+                FirstName = person.FirstName,
+                LastName = person.LastName,
+                Role = person is Employee emp ? emp.Role.ToString() : (person is Customer cust ? cust.Role.ToString() : "Guest"),
+                DepartmentId = (person as Employee)?.DepartmentId
+            }
+        };
+
+        return Result<LoginResponse>.Success(response, "Password changed successfully.");
     }
 
     public async Task<Result<RequestMagicLinkResponse>> RequestMagicLinkAsync(RequestMagicLinkCommand command, CancellationToken ct = default)
@@ -463,13 +575,16 @@ public class AuthService : IAuthService
         }
 
         // Issue standard RS256 JWT identical to normal login
-        var accessToken = _jwtTokenService.GenerateAccessToken(customer, mustChangePassword: false);
+        var issuedTokens = await IssueStandardTokensAsync(customer, ct);
+        var accessToken = issuedTokens.AccessToken;
 
         var response = new LoginResponse
         {
             AccessToken = accessToken,
+            Token = accessToken,
+            RefreshToken = issuedTokens.RefreshToken,
             TokenType = "Bearer",
-            ExpiresIn = 3600,
+            ExpiresIn = issuedTokens.ExpiresInSeconds,
             MustChangePassword = false,
             User = new AuthUserInfo
             {
@@ -477,7 +592,7 @@ public class AuthService : IAuthService
                 Email = customer.Email,
                 FirstName = customer.FirstName,
                 LastName = customer.LastName,
-                Role = "Customer"
+                Role = customer.Role.ToString()
             }
         };
 
@@ -552,6 +667,11 @@ public class AuthService : IAuthService
 
         if (employee != null)
         {
+            if (employee.Status != Domain.Enums.EmployeeStatus.Active)
+            {
+                return Result<LoginResponse>.Failure("Employee account is not approved for access.");
+            }
+
             if (!employee.IsActive)
             {
                 return Result<LoginResponse>.Failure("Account is deactivated. Please contact support.");
@@ -564,14 +684,19 @@ public class AuthService : IAuthService
                 await _dbContext.SaveChangesAsync(ct);
             }
 
-            var accessToken = _jwtTokenService.GenerateAccessToken(employee, employee.MustChangePassword);
+            var isTemporary = employee.MustChangePassword;
+            var issuedTokens = isTemporary
+                ? new IssuedTokenPair(_jwtTokenService.GenerateAccessToken(employee, mustChangePassword: true), string.Empty, 900)
+                : await IssueStandardTokensAsync(employee, ct);
+            var accessToken = issuedTokens.AccessToken;
 
             var response = new LoginResponse
             {
                 AccessToken = accessToken,
                 Token = accessToken,
+                RefreshToken = isTemporary ? null : issuedTokens.RefreshToken,
                 TokenType = "Bearer",
-                ExpiresIn = 3600,
+                ExpiresIn = issuedTokens.ExpiresInSeconds,
                 MustChangePassword = employee.MustChangePassword,
                 User = new AuthUserInfo
                 {
@@ -605,14 +730,16 @@ public class AuthService : IAuthService
                 await _dbContext.SaveChangesAsync(ct);
             }
 
-            var accessToken = _jwtTokenService.GenerateAccessToken(customer, mustChangePassword: false);
+            var issuedTokens = await IssueStandardTokensAsync(customer, ct);
+            var accessToken = issuedTokens.AccessToken;
 
             var response = new LoginResponse
             {
                 AccessToken = accessToken,
                 Token = accessToken,
+                RefreshToken = issuedTokens.RefreshToken,
                 TokenType = "Bearer",
-                ExpiresIn = 3600,
+                ExpiresIn = issuedTokens.ExpiresInSeconds,
                 MustChangePassword = false,
                 User = new AuthUserInfo
                 {
@@ -621,7 +748,7 @@ public class AuthService : IAuthService
                     Email = customer.Email,
                     FirstName = customer.FirstName,
                     LastName = customer.LastName,
-                    Role = "Customer",
+                    Role = customer.Role.ToString(),
                     DepartmentId = null
                 }
             };
@@ -631,5 +758,18 @@ public class AuthService : IAuthService
 
         // 3. User does not exist: Reject login - do NOT auto-create privileged accounts
         return Result<LoginResponse>.Failure("Your Google account is not registered in the SmartHotel system. Please contact an administrator.");
+    }
+
+    private async Task<IssuedTokenPair> IssueStandardTokensAsync(Person person, CancellationToken ct)
+    {
+        if (_tokenService != null)
+        {
+            return await _tokenService.IssueTokensAsync(person, ct);
+        }
+
+        return new IssuedTokenPair(
+            _jwtTokenService.GenerateAccessToken(person, mustChangePassword: false),
+            string.Empty,
+            3600);
     }
 }

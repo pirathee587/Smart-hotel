@@ -26,6 +26,7 @@ public class AttendanceService {
 
     private final AttendanceRecordRepository attendanceRecordRepository;
     private final OvertimeApprovalRepository overtimeApprovalRepository;
+    private final AttendanceSummaryService attendanceSummaryService;
 
     // In-memory cache to support strict 60s deduplication across rapid punches
     private final Map<UUID, Instant> lastPunchTimestamps = new HashMap<>();
@@ -64,6 +65,7 @@ public class AttendanceService {
                     .build();
 
             AttendanceRecord saved = attendanceRecordRepository.save(record);
+            attendanceSummaryService.markOutdated(employeeId, today);
             log.info("Clocked IN employee {} at {}", employeeId, now);
             return new PunchResult(saved, false, "Clock-in recorded successfully.");
         }
@@ -73,6 +75,7 @@ public class AttendanceService {
             // Clock-Out
             record.clockOut(now);
             AttendanceRecord saved = attendanceRecordRepository.save(record);
+            attendanceSummaryService.markOutdated(employeeId, today);
             log.info("Clocked OUT employee {} at {}. Worked: {}h, Overtime: {}h",
                     employeeId, now, saved.getHoursWorked(), saved.getOvertimeHours());
 
@@ -99,8 +102,13 @@ public class AttendanceService {
         OvertimeApproval approval = overtimeApprovalRepository.findById(approvalId)
                 .orElseThrow(() -> new IllegalArgumentException("Overtime approval not found: " + approvalId));
 
+        if (managerId != null && managerId.equals(approval.getEmployeeId())) {
+            throw new SecurityException("Employees cannot approve their own overtime.");
+        }
+
         approval.approve(managerId, notes);
         OvertimeApproval saved = overtimeApprovalRepository.save(approval);
+        attendanceSummaryService.markOutdated(approval.getEmployeeId(), attendanceRecordRepository.findById(approval.getAttendanceRecordId()).orElseThrow().getDate());
 
         // Update attendance record status
         attendanceRecordRepository.findById(approval.getAttendanceRecordId()).ifPresent(rec -> {
@@ -117,13 +125,19 @@ public class AttendanceService {
         OvertimeApproval approval = overtimeApprovalRepository.findById(approvalId)
                 .orElseThrow(() -> new IllegalArgumentException("Overtime approval not found: " + approvalId));
 
+        if (managerId != null && managerId.equals(approval.getEmployeeId())) {
+            throw new SecurityException("Employees cannot reject their own overtime.");
+        }
+
         approval.reject(managerId, notes);
         OvertimeApproval saved = overtimeApprovalRepository.save(approval);
+        attendanceSummaryService.markOutdated(approval.getEmployeeId(), attendanceRecordRepository.findById(approval.getAttendanceRecordId()).orElseThrow().getDate());
 
         // Update attendance record status
         attendanceRecordRepository.findById(approval.getAttendanceRecordId()).ifPresent(rec -> {
             rec.setStatus(AttendanceStatus.Normal);
             attendanceRecordRepository.save(rec);
+            attendanceSummaryService.markOutdated(rec.getEmployeeId(), rec.getDate());
         });
 
         log.info("Manager {} rejected overtime for employee {}", managerId, approval.getEmployeeId());

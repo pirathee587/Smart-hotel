@@ -1,8 +1,8 @@
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Avatar,AvatarFallback,AvatarImage } from '@/components/ui/avatar'
+import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/shadcn-button'
 import { Card } from '@/components/ui/shadcn-card'
 import { Input } from '@/components/ui/shadcn-input'
-import { Label } from '@/components/ui/label'
 
 function GoogleIcon() {
   return (

@@ -49,6 +49,7 @@ public class KioskLookupBookingQueryHandler : IRequestHandler<KioskLookupBooking
             CheckOutDate = booking.CheckOutDate,
             GuestCount = booking.GuestCount,
             TotalAmount = booking.TotalAmount,
+            Currency = booking.Currency,
             Status = booking.Status,
             CanCheckIn = canCheckIn,
             CanCheckOut = canCheckOut

@@ -2,6 +2,7 @@ namespace SmartHotel.Identity.Domain.Enums;
 
 public enum EmployeeRole
 {
+    Owner,
     Admin,
     Manager,
     Receptionist,

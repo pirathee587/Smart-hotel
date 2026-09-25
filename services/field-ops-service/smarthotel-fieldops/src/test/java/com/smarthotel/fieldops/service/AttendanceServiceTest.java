@@ -36,11 +36,14 @@ class AttendanceServiceTest {
     @Mock
     private OvertimeApprovalRepository overtimeApprovalRepository;
 
+    @Mock
+    private AttendanceSummaryService attendanceSummaryService;
+
     private AttendanceService attendanceService;
 
     @BeforeEach
     void setUp() {
-        attendanceService = new AttendanceService(attendanceRecordRepository, overtimeApprovalRepository);
+        attendanceService = new AttendanceService(attendanceRecordRepository, overtimeApprovalRepository, attendanceSummaryService);
     }
 
     @Test

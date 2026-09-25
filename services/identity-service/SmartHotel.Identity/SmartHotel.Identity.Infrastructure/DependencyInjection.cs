@@ -37,6 +37,7 @@ public static class DependencyInjection
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddSingleton<RsaKeyManager>();
         services.AddScoped<IJwtTokenService, JwtTokenService>();
+        services.AddScoped<ITokenService, TokenService>();
         services.AddScoped<IEmailService, SmtpEmailService>();
         services.AddSingleton<IRateLimiterService, InMemoryRateLimiterService>();
 

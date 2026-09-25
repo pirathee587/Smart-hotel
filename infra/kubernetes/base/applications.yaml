@@ -1,0 +1,227 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: identity}
+spec:
+  replicas: 2
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector: {matchLabels: {app: identity}}
+  template:
+    metadata: {labels: {app: identity}}
+    spec:
+      containers:
+        - name: identity
+          image: smarthotel-identity:dev
+          ports: [{name: http, containerPort: 5001}]
+          envFrom: [{configMapRef: {name: smarthotel-config}}]
+          env:
+            - {name: ConnectionStrings__DefaultConnection, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: identity-connection}}}
+          readinessProbe: {httpGet: {path: /health, port: http}, initialDelaySeconds: 10, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /health, port: http}, initialDelaySeconds: 30, periodSeconds: 20}
+          resources: {requests: {cpu: 100m, memory: 192Mi}, limits: {cpu: 500m, memory: 512Mi}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: identity}
+spec: {selector: {app: identity}, ports: [{name: http, port: 5001, targetPort: http}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: hotel-ops}
+spec:
+  replicas: 2
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector: {matchLabels: {app: hotel-ops}}
+  template:
+    metadata: {labels: {app: hotel-ops}}
+    spec:
+      containers:
+        - name: hotel-ops
+          image: smarthotel-hotel-ops:dev
+          ports: [{name: http, containerPort: 5002}, {name: grpc, containerPort: 5012}]
+          envFrom: [{configMapRef: {name: smarthotel-config}}]
+          env:
+            - {name: ConnectionStrings__DefaultConnection, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: hotelops-connection}}}
+            - {name: HOTEL_OPS_SERVICE_API_KEY, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: hotelops-api-key}}}
+            - {name: RabbitMQ__UserName, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: rabbitmq-user}}}
+            - {name: RabbitMQ__Password, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: rabbitmq-password}}}
+            - {name: Supabase__Url, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: supabase-url}}}
+            - {name: Supabase__Key, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: supabase-key}}}
+          readinessProbe: {httpGet: {path: /health, port: http}, initialDelaySeconds: 15, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /health, port: http}, initialDelaySeconds: 40, periodSeconds: 20}
+          resources: {requests: {cpu: 150m, memory: 256Mi}, limits: {cpu: 750m, memory: 768Mi}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: hotel-ops}
+spec: {selector: {app: hotel-ops}, ports: [{name: http, port: 5002, targetPort: http}, {name: grpc, port: 5012, targetPort: grpc}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: booking}
+spec:
+  replicas: 2
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector: {matchLabels: {app: booking}}
+  template:
+    metadata: {labels: {app: booking}}
+    spec:
+      containers:
+        - name: booking
+          image: smarthotel-booking:dev
+          ports: [{name: http, containerPort: 5003}, {name: grpc, containerPort: 5013}]
+          envFrom: [{configMapRef: {name: smarthotel-config}}]
+          env:
+            - {name: ConnectionStrings__DefaultConnection, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: booking-connection}}}
+            - {name: HOTEL_OPS_SERVICE_API_KEY, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: hotelops-api-key}}}
+            - {name: RABBITMQ_USER, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: rabbitmq-user}}}
+            - {name: RABBITMQ_PASSWORD, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: rabbitmq-password}}}
+            - {name: PAYHERE_MERCHANT_ID, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: payhere-sandbox-id}}}
+            - {name: PAYHERE_MERCHANT_SECRET, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: payhere-sandbox-secret}}}
+          readinessProbe: {httpGet: {path: /health, port: http}, initialDelaySeconds: 15, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /health, port: http}, initialDelaySeconds: 40, periodSeconds: 20}
+          resources: {requests: {cpu: 150m, memory: 256Mi}, limits: {cpu: 750m, memory: 768Mi}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: booking}
+spec: {selector: {app: booking}, ports: [{name: http, port: 5003, targetPort: http}, {name: grpc, port: 5013, targetPort: grpc}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: field-ops}
+spec:
+  replicas: 2
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector: {matchLabels: {app: field-ops}}
+  template:
+    metadata: {labels: {app: field-ops}}
+    spec:
+      containers:
+        - name: field-ops
+          image: smarthotel-field-ops:dev
+          ports: [{name: http, containerPort: 8084}]
+          envFrom: [{configMapRef: {name: smarthotel-config}}]
+          env:
+            - {name: SPRING_DATASOURCE_URL, value: jdbc:postgresql://postgres:5432/smarthotel_fieldops}
+            - {name: SPRING_DATASOURCE_USERNAME, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: postgres-user}}}
+            - {name: SPRING_DATASOURCE_PASSWORD, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: postgres-password}}}
+            - {name: BIOMETRICS_DEVICE_API_KEY, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: biometrics-api-key}}}
+            - {name: RABBITMQ_DEFAULT_USER, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: rabbitmq-user}}}
+            - {name: RABBITMQ_DEFAULT_PASS, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: rabbitmq-password}}}
+          readinessProbe: {httpGet: {path: /actuator/health/readiness, port: http}, initialDelaySeconds: 30, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /actuator/health/liveness, port: http}, initialDelaySeconds: 60, periodSeconds: 20}
+          resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "1", memory: 1Gi}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: field-ops}
+spec: {selector: {app: field-ops}, ports: [{name: http, port: 8084, targetPort: http}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: notifications}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: notifications}}
+  template:
+    metadata: {labels: {app: notifications}}
+    spec:
+      containers:
+        - name: notifications
+          image: smarthotel-notifications:dev
+          ports: [{name: http, containerPort: 5004}]
+          envFrom: [{configMapRef: {name: smarthotel-config}}]
+          env:
+            - {name: ConnectionStrings__DefaultConnection, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: notifications-connection}}}
+            - {name: Redis__ConnectionString, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: redis-connection}}}
+            - {name: RabbitMQ__UserName, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: rabbitmq-user}}}
+            - {name: RabbitMQ__Password, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: rabbitmq-password}}}
+          readinessProbe: {httpGet: {path: /health, port: http}, initialDelaySeconds: 15, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /health, port: http}, initialDelaySeconds: 40, periodSeconds: 20}
+          resources: {requests: {cpu: 100m, memory: 192Mi}, limits: {cpu: 500m, memory: 512Mi}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: notifications}
+spec: {selector: {app: notifications}, ports: [{name: http, port: 5004, targetPort: http}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: concierge}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: concierge}}
+  template:
+    metadata: {labels: {app: concierge}}
+    spec:
+      containers:
+        - name: concierge
+          image: smarthotel-concierge:dev
+          ports: [{name: http, containerPort: 5005}]
+          envFrom: [{configMapRef: {name: smarthotel-config}}]
+          env:
+            - {name: RABBITMQ_USER, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: rabbitmq-user}}}
+            - {name: RABBITMQ_PASSWORD, valueFrom: {secretKeyRef: {name: smarthotel-secrets, key: rabbitmq-password}}}
+          readinessProbe: {httpGet: {path: /health, port: http}, initialDelaySeconds: 15, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /health, port: http}, initialDelaySeconds: 40, periodSeconds: 20}
+          resources: {requests: {cpu: 200m, memory: 512Mi}, limits: {cpu: "1", memory: 2Gi}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: false, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: concierge}
+spec: {selector: {app: concierge}, ports: [{name: http, port: 5005, targetPort: http}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: gateway}
+spec:
+  replicas: 2
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector: {matchLabels: {app: gateway}}
+  template:
+    metadata: {labels: {app: gateway}}
+    spec:
+      containers:
+        - name: gateway
+          image: smarthotel-gateway:dev
+          ports: [{name: http, containerPort: 5000}]
+          envFrom: [{configMapRef: {name: smarthotel-config}}]
+          readinessProbe: {httpGet: {path: /health, port: http}, initialDelaySeconds: 10, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /health, port: http}, initialDelaySeconds: 30, periodSeconds: 20}
+          resources: {requests: {cpu: 100m, memory: 192Mi}, limits: {cpu: 500m, memory: 512Mi}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: gateway}
+spec: {type: NodePort, selector: {app: gateway}, ports: [{name: http, port: 5000, targetPort: http}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: frontend}
+spec:
+  replicas: 2
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector: {matchLabels: {app: frontend}}
+  template:
+    metadata: {labels: {app: frontend}}
+    spec:
+      containers:
+        - name: frontend
+          image: smarthotel-frontend:dev
+          ports: [{name: http, containerPort: 3000}]
+          readinessProbe: {httpGet: {path: /, port: http}, initialDelaySeconds: 10, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /, port: http}, initialDelaySeconds: 30, periodSeconds: 20}
+          resources: {requests: {cpu: 100m, memory: 192Mi}, limits: {cpu: 500m, memory: 512Mi}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: frontend}
+spec: {type: NodePort, selector: {app: frontend}, ports: [{name: http, port: 3000, targetPort: http}]}

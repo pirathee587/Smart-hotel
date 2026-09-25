@@ -1,19 +1,19 @@
 "use client";
 
+import type { MarkerOptions,PopupOptions } from "maplibre-gl";
 import * as MapLibreGL from "maplibre-gl";
-import type { MarkerOptions, PopupOptions } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
-  createContext,
-  forwardRef,
-  useCallback,
-  useContext,
-  useEffect,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
+createContext,
+forwardRef,
+useContext,
+useEffect,
+useEffectEvent,
+useImperativeHandle,
+useMemo,
+useRef,
+useState,
+type ReactNode
 } from "react";
 import { createPortal } from "react-dom";
 
@@ -106,10 +106,7 @@ function useResolvedTheme(themeProp?: Theme): Theme {
   const [theme, setTheme] = useState<Theme>(() => themeProp ?? getDocumentTheme() ?? getSystemTheme());
 
   useEffect(() => {
-    if (themeProp) {
-      setTheme(themeProp);
-      return;
-    }
+    if (themeProp) return;
     const updateTheme = () => {
       const docTheme = getDocumentTheme();
       setTheme(docTheme ?? getSystemTheme());
@@ -124,7 +121,7 @@ function useResolvedTheme(themeProp?: Theme): Theme {
     };
   }, [themeProp]);
 
-  return theme;
+  return themeProp ?? theme;
 }
 
 function useMap() {
@@ -176,19 +173,22 @@ const Map = forwardRef<MapRef, MapProps>(function Map(
   const internalUpdateRef = useRef(false);
   const resolvedTheme = useResolvedTheme(themeProp);
   const currentStyleRef = useRef<MapStyleOption | null>(null);
-  const onViewportChangeRef = useRef(onViewportChange);
-  onViewportChangeRef.current = onViewportChange;
+  const notifyViewportChange = useEffectEvent((nextViewport: MapViewport) => {
+    onViewportChange?.(nextViewport);
+  });
 
   const mapStyles = useMemo(
     () => ({ dark: styles?.dark ?? defaultStyles.dark, light: styles?.light ?? defaultStyles.light }),
     [styles],
   );
+  const initialMapConfigRef = useRef({ mapStyles, props, resolvedTheme, viewport });
 
   useImperativeHandle(ref, () => mapInstance as MapLibreGL.Map, [mapInstance]);
 
   useEffect(() => {
     if (!containerRef.current) return;
-    const initialStyle = resolvedTheme === "dark" ? mapStyles.dark : mapStyles.light;
+    const initialConfig = initialMapConfigRef.current;
+    const initialStyle = initialConfig.resolvedTheme === "dark" ? initialConfig.mapStyles.dark : initialConfig.mapStyles.light;
     currentStyleRef.current = initialStyle;
 
     const map = new MapLibreGL.Map({
@@ -196,8 +196,8 @@ const Map = forwardRef<MapRef, MapProps>(function Map(
       style: initialStyle,
       renderWorldCopies: false,
       attributionControl: { compact: true },
-      ...props,
-      ...viewport,
+      ...initialConfig.props,
+      ...initialConfig.viewport,
     });
 
     const loadHandler = () => {
@@ -211,7 +211,7 @@ const Map = forwardRef<MapRef, MapProps>(function Map(
     };
 
     const moveHandler = () => {
-      if (!internalUpdateRef.current) onViewportChangeRef.current?.(getViewport(map));
+      if (!internalUpdateRef.current) notifyViewportChange(getViewport(map));
     };
 
     map.on("load", loadHandler);
@@ -298,42 +298,48 @@ type MapMarkerProps = {
 
 function MapMarker({ longitude, latitude, children, onClick, onMouseEnter, onMouseLeave, onDragStart, onDrag, onDragEnd, draggable = false, ...markerOptions }: MapMarkerProps) {
   const { map } = useMap();
-  const callbacksRef = useRef({ onClick, onMouseEnter, onMouseLeave, onDragStart, onDrag, onDragEnd });
-  callbacksRef.current = { onClick, onMouseEnter, onMouseLeave, onDragStart, onDrag, onDragEnd };
-
-  const marker = useMemo(() => {
-    const markerInstance = new MapLibreGL.Marker({ ...markerOptions, element: document.createElement("div"), draggable }).setLngLat([longitude, latitude]);
-    const handleClick = (event: MouseEvent) => callbacksRef.current.onClick?.(event);
-    const handleMouseEnter = (event: MouseEvent) => callbacksRef.current.onMouseEnter?.(event);
-    const handleMouseLeave = (event: MouseEvent) => callbacksRef.current.onMouseLeave?.(event);
-    markerInstance.getElement()?.addEventListener("click", handleClick);
-    markerInstance.getElement()?.addEventListener("mouseenter", handleMouseEnter);
-    markerInstance.getElement()?.addEventListener("mouseleave", handleMouseLeave);
-    markerInstance.on("dragstart", () => {
-      const lngLat = markerInstance.getLngLat();
-      callbacksRef.current.onDragStart?.({ lng: lngLat.lng, lat: lngLat.lat });
-    });
-    markerInstance.on("drag", () => {
-      const lngLat = markerInstance.getLngLat();
-      callbacksRef.current.onDrag?.({ lng: lngLat.lng, lat: lngLat.lat });
-    });
-    markerInstance.on("dragend", () => {
-      const lngLat = markerInstance.getLngLat();
-      callbacksRef.current.onDragEnd?.({ lng: lngLat.lng, lat: lngLat.lat });
-    });
-    return markerInstance;
-  }, []);
+  const [marker] = useState(() => new MapLibreGL.Marker({ ...markerOptions, element: document.createElement("div"), draggable }).setLngLat([longitude, latitude]));
+  const handleClick = useEffectEvent((event: MouseEvent) => onClick?.(event));
+  const handleMouseEnter = useEffectEvent((event: MouseEvent) => onMouseEnter?.(event));
+  const handleMouseLeave = useEffectEvent((event: MouseEvent) => onMouseLeave?.(event));
+  const handleDragStart = useEffectEvent(() => {
+    const lngLat = marker.getLngLat();
+    onDragStart?.({ lng: lngLat.lng, lat: lngLat.lat });
+  });
+  const handleDrag = useEffectEvent(() => {
+    const lngLat = marker.getLngLat();
+    onDrag?.({ lng: lngLat.lng, lat: lngLat.lat });
+  });
+  const handleDragEnd = useEffectEvent(() => {
+    const lngLat = marker.getLngLat();
+    onDragEnd?.({ lng: lngLat.lng, lat: lngLat.lat });
+  });
 
   useEffect(() => {
     if (!map) return;
+    const element = marker.getElement();
+    element.addEventListener("click", handleClick);
+    element.addEventListener("mouseenter", handleMouseEnter);
+    element.addEventListener("mouseleave", handleMouseLeave);
+    marker.on("dragstart", handleDragStart);
+    marker.on("drag", handleDrag);
+    marker.on("dragend", handleDragEnd);
     marker.addTo(map);
     return () => {
+      element.removeEventListener("click", handleClick);
+      element.removeEventListener("mouseenter", handleMouseEnter);
+      element.removeEventListener("mouseleave", handleMouseLeave);
+      marker.off("dragstart", handleDragStart);
+      marker.off("drag", handleDrag);
+      marker.off("dragend", handleDragEnd);
       marker.remove();
     };
   }, [map, marker]);
 
-  if (marker.getLngLat().lng !== longitude || marker.getLngLat().lat !== latitude) marker.setLngLat([longitude, latitude]);
-  if (marker.isDraggable() !== draggable) marker.setDraggable(draggable);
+  useEffect(() => {
+    if (marker.getLngLat().lng !== longitude || marker.getLngLat().lat !== latitude) marker.setLngLat([longitude, latitude]);
+    if (marker.isDraggable() !== draggable) marker.setDraggable(draggable);
+  }, [draggable, latitude, longitude, marker]);
 
   return <MarkerContext.Provider value={{ marker, map }}>{children}</MarkerContext.Provider>;
 }
@@ -363,10 +369,9 @@ type MarkerTooltipProps = {
 function MarkerTooltip({ children, className, ...popupOptions }: MarkerTooltipProps) {
   const { marker, map } = useMarkerContext();
   const container = useMemo(() => document.createElement("div"), []);
-  const prevTooltipOptions = useRef(popupOptions);
-  const tooltip = useMemo(() => {
-    return new MapLibreGL.Popup({ offset: 16, ...popupOptions, closeOnClick: true, closeButton: false }).setMaxWidth("none");
-  }, []);
+  const [tooltip] = useState(() =>
+    new MapLibreGL.Popup({ offset: 16, ...popupOptions, closeOnClick: true, closeButton: false }).setMaxWidth("none"),
+  );
 
   useEffect(() => {
     if (!map) return;
@@ -382,12 +387,10 @@ function MarkerTooltip({ children, className, ...popupOptions }: MarkerTooltipPr
     };
   }, [container, map, marker, tooltip]);
 
-  if (tooltip.isOpen()) {
-    const prev = prevTooltipOptions.current;
-    if (prev.offset !== popupOptions.offset) tooltip.setOffset(popupOptions.offset ?? 16);
-    if (prev.maxWidth !== popupOptions.maxWidth && popupOptions.maxWidth) tooltip.setMaxWidth(popupOptions.maxWidth ?? "none");
-    prevTooltipOptions.current = popupOptions;
-  }
+  useEffect(() => {
+    tooltip.setOffset(popupOptions.offset ?? 16);
+    if (popupOptions.maxWidth) tooltip.setMaxWidth(popupOptions.maxWidth);
+  }, [popupOptions.maxWidth, popupOptions.offset, tooltip]);
 
   return createPortal(
     <div className={cn("pointer-events-none rounded-md bg-foreground px-2 py-1 text-xs text-balance text-background shadow-md animate-in fade-in-0 zoom-in-95 duration-200 ease-out", className)}>
@@ -412,4 +415,4 @@ function MarkerLabel({ children, className, position = "top" }: MarkerLabelProps
   );
 }
 
-export { Map, useMap, MapMarker, MarkerContent, MarkerTooltip, MarkerLabel };
+export { Map,MapMarker,MarkerContent,MarkerLabel,MarkerTooltip,useMap };

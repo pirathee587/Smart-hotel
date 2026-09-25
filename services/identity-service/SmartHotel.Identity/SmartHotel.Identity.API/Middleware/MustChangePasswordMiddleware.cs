@@ -21,8 +21,10 @@ public class MustChangePasswordMiddleware
             if (string.Equals(mustChangePasswordClaim, "true", StringComparison.OrdinalIgnoreCase))
             {
                 var path = context.Request.Path.Value?.TrimEnd('/');
-                // Only permit the change-password endpoint for this restricted token
-                if (!string.Equals(path, "/api/v1/auth/change-password", StringComparison.OrdinalIgnoreCase))
+                // Public login must remain callable even if a browser accidentally
+                // sends an existing restricted bearer token with the request.
+                var isLogin = string.Equals(path, "/api/v1/auth/employee/login", StringComparison.OrdinalIgnoreCase);
+                if (!isLogin && !string.Equals(path, "/api/v1/auth/change-password", StringComparison.OrdinalIgnoreCase))
                 {
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
                     context.Response.ContentType = "application/json";

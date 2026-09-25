@@ -26,7 +26,8 @@ public static class DataSeeder
             Phone = "+94 11 234 5678",
             Email = "info@smarthotel.lk",
             TotalFloors = 5,
-            TotalRooms = 20
+            TotalRooms = 20,
+            BaseCurrency = "LKR"
         };
         context.Hotels.Add(hotel);
 
@@ -52,7 +53,14 @@ public static class DataSeeder
             Name = "Maintenance",
             Description = "Facility repairs, HVAC, electrical, and plumbing"
         };
-        context.Departments.AddRange(frontDesk, housekeeping, maintenance);
+        var finance = new Department
+        {
+            Id = Guid.Parse("22222222-2222-2222-2222-222222222225"),
+            HotelId = hotel.Id,
+            Name = "Finance",
+            Description = "Revenue, expenses, refunds, payroll review, reporting, and financial controls"
+        };
+        context.Departments.AddRange(frontDesk, housekeeping, maintenance, finance);
 
         // 3. RoomTypes
         var deluxeOcean = new RoomType
@@ -158,6 +166,6 @@ public static class DataSeeder
         context.Rooms.AddRange(rooms);
 
         await context.SaveChangesAsync();
-        logger.LogInformation("Seeded Hotel, 3 Departments, 3 RoomTypes, and {RoomCount} Rooms.", rooms.Count);
+        logger.LogInformation("Seeded Hotel, 4 Departments, 3 RoomTypes, and {RoomCount} Rooms.", rooms.Count);
     }
 }

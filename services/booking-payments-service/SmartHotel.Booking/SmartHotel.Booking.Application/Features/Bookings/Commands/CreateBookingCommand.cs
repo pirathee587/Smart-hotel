@@ -77,7 +77,9 @@ public class CreateBookingCommandHandler : IRequestHandler<CreateBookingCommand,
         }
 
         // 3. Concurrency Protection & Anti-Double-Booking Check
-        // Wrapped in database advisory lock on RoomId
+        await using var transaction = await _context.BeginBookingTransactionAsync(ct);
+
+        // The command owns the transaction; the xact lock is released on commit or rollback.
         using var lockScope = await _context.AcquireRoomLockAsync(req.RoomId, ct);
 
         var hasConflict = await _context.Bookings.AnyAsync(b =>
@@ -89,10 +91,20 @@ public class CreateBookingCommandHandler : IRequestHandler<CreateBookingCommand,
 
         if (hasConflict)
         {
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(ct);
+            }
             return Result<BookingDto>.Failure("The room is already booked for the selected dates. Please choose another date range or room.");
         }
 
-        // 4. Compute Total Amount
+        // 4. Compute Total Amount and Currency
+        if (string.IsNullOrWhiteSpace(roomType.Currency) || roomType.Currency.Trim().Length != 3)
+        {
+            return Result<BookingDto>.Failure("Authoritative room type currency is missing or invalid.");
+        }
+        var currency = roomType.Currency.Trim().ToUpperInvariant();
+
         var nights = req.CheckOutDate.DayNumber - req.CheckInDate.DayNumber;
         var totalAmount = (nights * roomType.PricePerNight) + roomType.CleaningFee + roomType.AmenitiesFee;
 
@@ -111,11 +123,17 @@ public class CreateBookingCommandHandler : IRequestHandler<CreateBookingCommand,
             CheckOutDate = req.CheckOutDate,
             GuestCount = req.GuestCount,
             TotalAmount = totalAmount,
+            Currency = currency,
             Status = BookingStatus.PendingPayment
         };
 
         _context.Bookings.Add(booking);
         await _context.SaveChangesAsync(ct);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(ct);
+        }
+
 
         var dto = new BookingDto
         {
@@ -131,6 +149,7 @@ public class CreateBookingCommandHandler : IRequestHandler<CreateBookingCommand,
             CheckOutDate = booking.CheckOutDate,
             GuestCount = booking.GuestCount,
             TotalAmount = booking.TotalAmount,
+            Currency = booking.Currency,
             Status = booking.Status,
             CreatedAtUtc = booking.CreatedAtUtc
         };

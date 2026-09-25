@@ -1,456 +1,424 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { portalApi } from '@/services/portalApi'
-import { useChatSocket } from '@/hooks/useChatSocket'
-import type { ChatBubble, SendMessageRequest } from '@/types/chat'
+import { useConciergeStream } from '@/hooks/useConciergeStream'
+import type { ConciergeServiceRequestDto } from '@/types/chat'
+import {
+  AlertCircle,
+  Bot,
+  CheckCircle2,
+  Clock,
+  Maximize2,
+  Minimize2,
+  RotateCcw,
+  Send,
+  Sparkles,
+  User,
+  X,
+} from 'lucide-react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 
 interface GuestChatWidgetProps {
   token: string
-  bookingId: string
-  roomId: string
-  roomFloor: number
-  roomNumber: string
-  customerName: string
+  bookingId?: string
+  roomId?: string
+  roomFloor?: number
+  roomNumber?: string
+  customerName?: string
 }
 
-const generateId = () => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 11))
-
-const GOLD = '#e2b96f'
-const GOLD_DIM = 'rgba(226,185,111,0.15)'
-
 const QUICK_ACTIONS = [
-  { label: '🧹 Room Cleaning', message: 'I need room cleaning service please.' },
-  { label: '🛁 Extra Towels', message: 'Could I get extra towels delivered to my room?' },
-  { label: '❄️ AC Issue', message: 'The air conditioning in my room is not working properly.' },
-  { label: '📶 WiFi Help', message: 'What is the WiFi network name and how do I connect?' },
-  { label: '🕒 Checkout Time', message: 'What is the checkout time?' },
-  { label: '🗣 Talk to Staff', message: null },  // triggers escalation
+  { label: '🧹 Extra Towels', message: 'Could you please send extra bath towels to my room?' },
+  { label: '🔧 AC Temperature', message: 'The air conditioning in my room is running too cold. Could maintenance check it?' },
+  { label: '🏊 Pool & Spa Hours', message: 'What are the operating hours for the infinity pool and spa?' },
+  { label: '🍽 Breakfast Times', message: 'What time is breakfast served and where is the dining hall located?' },
+  { label: '🕒 Checkout Time', message: 'What is the checkout time for today?' },
 ]
 
 export default function GuestChatWidget({
-  token, bookingId, roomId, roomFloor, roomNumber, customerName,
+  token,
+  customerName = 'Valued Guest',
 }: GuestChatWidgetProps) {
-  const [isOpen, setIsOpen]       = useState(false)
-  const [input, setInput]         = useState('')
-  const [isSending, setIsSending] = useState(false)
-  const [isEscalated, setIsEscalated] = useState(false)
-  const [sessionId, setSessionId] = useState<string | null>(null)
-  const [bubbles, setBubbles]     = useState<ChatBubble[]>([])
-  const [unreadCount, setUnreadCount] = useState(0)
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const [isOpen, setIsOpen] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [input, setInput] = useState('')
+
+  const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const { streamingContent, isStreaming, isConnected, joinSession, resetStreaming } = useChatSocket({
+  const {
+    messages,
+    isStreaming,
+    error,
+    context,
+    activeRequests,
+    sendMessage,
+    cancelStream,
+    resetChat,
+  } = useConciergeStream({
     token,
-    sessionId,
+    customerName,
   })
 
-  // ── Hydrate history on open ───────────────────────────────────────────────
-  useEffect(() => {
-    if (!isOpen || bubbles.length > 0) return
-    portalApi.getChatHistory(token, bookingId).then(msgs => {
-      const hydrated: ChatBubble[] = msgs
-        .filter(m => m.role === 'User' || m.role === 'Assistant')
-        .map(m => ({
-          id:        m.id,
-          role:      m.role === 'User' ? 'user' : 'assistant',
-          content:   m.content,
-          createdAt: new Date(m.createdAt),
-        }))
-      if (hydrated.length > 0) setBubbles(hydrated)
-    }).catch(() => {
-      // Silent — chat starts fresh
-    })
-  }, [isOpen])
+  // Derived unread count for guest when drawer is closed
+  const unreadCount = isOpen
+    ? 0
+    : Math.max(0, messages.filter((m) => m.role === 'assistant' && m.id !== 'greeting').length)
 
-  // ── Add greeting on first open ────────────────────────────────────────────
+  // Auto-scroll on new messages or streaming tokens
   useEffect(() => {
-    if (isOpen && bubbles.length === 0 && !isSending) {
-      setBubbles([{
-        id:        'greeting',
-        role:      'assistant',
-        content:   `Hello ${customerName}! 👋 I'm Aria, your SmartHotel AI concierge. How can I help you today? You can ask me about hotel facilities, report an issue, or request a service.`,
-        createdAt: new Date(),
-      }])
+    if (isOpen) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [isOpen])
+  }, [messages, isOpen])
 
-  // ── Scroll to bottom on new message ──────────────────────────────────────
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-    if (!isOpen && bubbles.length > 0) setUnreadCount(c => c + 1)
-  }, [bubbles])
 
-  useEffect(() => {
-    if (isOpen) setUnreadCount(0)
-  }, [isOpen])
-
-  // ── Commit streaming message to bubbles once stream completes ─────────────
-  const streamingBubbleIdRef = useRef<string | null>(null)
-
-  useEffect(() => {
-    if (isStreaming && streamingContent && !streamingBubbleIdRef.current) {
-      const id = generateId()
-      streamingBubbleIdRef.current = id
-      setBubbles(prev => [...prev, {
-        id, role: 'assistant', content: streamingContent, isStreaming: true, createdAt: new Date(),
-      }])
-    } else if (isStreaming && streamingContent && streamingBubbleIdRef.current) {
-      setBubbles(prev => prev.map(b =>
-        b.id === streamingBubbleIdRef.current
-          ? { ...b, content: streamingContent }
-          : b,
-      ))
-    } else if (!isStreaming && streamingBubbleIdRef.current) {
-      setBubbles(prev => prev.map(b =>
-        b.id === streamingBubbleIdRef.current
-          ? { ...b, isStreaming: false }
-          : b,
-      ))
-      streamingBubbleIdRef.current = null
-      resetStreaming()
-    }
-  }, [streamingContent, isStreaming])
-
-  // ── Send message ──────────────────────────────────────────────────────────
-  const sendMessage = useCallback(async (text: string) => {
-    if (!text.trim() || isSending) return
-    setIsSending(true)
+  // Handle message submission
+  const handleSend = useCallback(async () => {
+    const text = input.trim()
+    if (!text || isStreaming) return
     setInput('')
-
-    const userBubble: ChatBubble = {
-      id: generateId(), role: 'user', content: text.trim(), createdAt: new Date(),
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
     }
-    setBubbles(prev => [...prev, userBubble])
+    await sendMessage(text)
+  }, [input, isStreaming, sendMessage])
 
-    try {
-      const req: SendMessageRequest = {
-        message: text.trim(), bookingId, roomId, roomFloor, roomNumber, customerName,
-      }
-      const result = await portalApi.sendChatMessage(token, req)
-
-      // If not streaming (fallback / non-streaming provider), add reply bubble directly
-      if (!isStreaming && !streamingBubbleIdRef.current) {
-        const replyBubble: ChatBubble = {
-          id:               generateId(),
-          role:             'assistant',
-          content:          result.replyText,
-          createdAt:        new Date(),
-          ticketRef:        result.ticketReference ?? undefined,
-          serviceRequestId: result.serviceRequestId ?? undefined,
-          isEscalated:      result.isEscalated,
-          isFallback:       result.isFallback,
-        }
-        setBubbles(prev => [...prev, replyBubble])
-      }
-
-      if (result.isEscalated) setIsEscalated(true)
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Something went wrong. Please try again.'
-      setBubbles(prev => [...prev, {
-        id: generateId(), role: 'assistant',
-        content: `⚠️ ${msg}`,
-        createdAt: new Date(), isFallback: true,
-      }])
-    } finally {
-      setIsSending(false)
-    }
-  }, [token, bookingId, roomId, roomFloor, roomNumber, customerName, isSending, isStreaming])
-
-  // ── Escalate to human ─────────────────────────────────────────────────────
-  const handleEscalate = useCallback(async () => {
-    try {
-      await portalApi.escalateChatSession(token, { bookingId, roomFloor, roomNumber })
-      setIsEscalated(true)
-      setBubbles(prev => [...prev, {
-        id: generateId(), role: 'assistant',
-        content: '✅ A front desk team member has been notified and will reach out to you shortly.',
-        createdAt: new Date(),
-      }])
-    } catch {
-      setBubbles(prev => [...prev, {
-        id: generateId(), role: 'assistant',
-        content: '⚠️ Could not reach front desk right now. Please call reception directly.',
-        createdAt: new Date(),
-      }])
-    }
-  }, [token, bookingId, roomFloor, roomNumber])
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      sendMessage(input)
+      handleSend()
     }
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // Adjust textarea height dynamically
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value)
+    e.target.style.height = 'auto'
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`
+  }
+
+  // Render status badge for tracked request
+  const renderRequestStatusBadge = (req: ConciergeServiceRequestDto) => {
+    switch (req.status) {
+      case 'REQUEST_PENDING':
+        return (
+          <div className="mt-2.5 rounded-xl border border-amber-500/30 bg-amber-950/40 p-2.5 text-xs text-amber-200">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 font-medium">
+                <Clock className="h-3.5 w-3.5 animate-spin text-amber-400" />
+                Queued with Concierge
+              </span>
+              <span className="text-[10px] text-amber-300/70 font-mono">
+                Ref #{req.requestId.substring(0, 8)}
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-amber-200/80">
+              {req.requestType} • Room {req.roomNumber}: &quot;{req.description}&quot;
+            </p>
+          </div>
+        )
+      case 'TASK_CREATED':
+        return (
+          <div className="mt-2.5 rounded-xl border border-sky-500/30 bg-sky-950/40 p-2.5 text-xs text-sky-200">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 font-medium">
+                <CheckCircle2 className="h-3.5 w-3.5 text-sky-400" />
+                Confirmed with {req.requestType}
+              </span>
+              <span className="text-[10px] text-sky-300/70 font-mono">
+                Ref #{req.requestId.substring(0, 8)}
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-sky-200/80">
+              Awaiting manager assignment for Room {req.roomNumber}.
+            </p>
+          </div>
+        )
+      case 'ASSIGNED':
+      case 'IN_PROGRESS':
+        return (
+          <div className="mt-2.5 rounded-xl border border-indigo-500/30 bg-indigo-950/40 p-2.5 text-xs text-indigo-200">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 font-medium">
+                <User className="h-3.5 w-3.5 text-indigo-400" />
+                Staff Assigned &amp; In Progress
+              </span>
+              <span className="text-[10px] text-indigo-300/70 font-mono">
+                Task #{req.taskId ? req.taskId.substring(0, 8) : req.requestId.substring(0, 8)}
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-indigo-200/80">
+              Our {req.requestType} specialist is currently attending to Room {req.roomNumber}.
+            </p>
+          </div>
+        )
+      case 'COMPLETED':
+        return (
+          <div className="mt-2.5 rounded-xl border border-emerald-500/30 bg-emerald-950/40 p-2.5 text-xs text-emerald-200">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 font-medium">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                Service Completed
+              </span>
+              <span className="text-[10px] text-emerald-300/70 font-mono">
+                Ref #{req.requestId.substring(0, 8)}
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-emerald-200/80">
+              Your request for Room {req.roomNumber} has been fulfilled.
+            </p>
+          </div>
+        )
+      case 'FAILED':
+        return (
+          <div className="mt-2.5 rounded-xl border border-rose-500/30 bg-rose-950/40 p-2.5 text-xs text-rose-200">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 font-medium">
+                <AlertCircle className="h-3.5 w-3.5 text-rose-400" />
+                Dispatch Issue
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-rose-200/80">
+              Unable to queue request automatically. Please dial 0 from your room phone.
+            </p>
+          </div>
+        )
+      default:
+        return null
+    }
+  }
+
   return (
     <>
-      {/* ── Floating trigger button ─────────────────────────────────────────── */}
-      <button
-        id="chat-widget-trigger"
-        onClick={() => setIsOpen(o => !o)}
-        aria-label="Open AI Concierge Chat"
-        style={{
-          position: 'fixed', bottom: 28, right: 28, zIndex: 1000,
-          width: 60, height: 60, borderRadius: '50%',
-          background: `linear-gradient(135deg, ${GOLD}, #c8914a)`,
-          border: 'none', cursor: 'pointer', boxShadow: '0 4px 20px rgba(226,185,111,0.4)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transition: 'transform 0.2s, box-shadow 0.2s',
-        }}
-        onMouseEnter={e => {
-          (e.currentTarget as HTMLElement).style.transform = 'scale(1.1)'
-          ;(e.currentTarget as HTMLElement).style.boxShadow = '0 6px 28px rgba(226,185,111,0.6)'
-        }}
-        onMouseLeave={e => {
-          (e.currentTarget as HTMLElement).style.transform = 'scale(1)'
-          ;(e.currentTarget as HTMLElement).style.boxShadow = '0 4px 20px rgba(226,185,111,0.4)'
-        }}
-      >
-        <span style={{ fontSize: 26 }}>{isOpen ? '✕' : '💬'}</span>
-        {unreadCount > 0 && !isOpen && (
-          <span style={{
-            position: 'absolute', top: 0, right: 0,
-            background: '#e53e3e', color: '#fff', fontSize: 11, fontWeight: 700,
-            borderRadius: '50%', width: 20, height: 20,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>{unreadCount}</span>
-        )}
-      </button>
+      {/* Floating Concierge Launcher Button */}
+      {!isOpen && (
+        <button
+          onClick={() => setIsOpen(true)}
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-full bg-[#16302C] px-5 py-3.5 text-[#F6F1E6] shadow-2xl border border-[#2F5C52]/50 hover:bg-[#1C3D38] hover:border-[#E07A3E]/60 transition-all duration-300 group focus:outline-none focus:ring-2 focus:ring-[#E07A3E]"
+          aria-label="Open AI Concierge chat"
+        >
+          <div className="relative">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#E07A3E] text-white shadow-md group-hover:scale-105 transition-transform">
+              <Bot className="h-5 w-5" />
+            </div>
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white shadow">
+                {unreadCount}
+              </span>
+            )}
+          </div>
+          <div className="text-left pr-1">
+            <p className="text-xs uppercase tracking-wider text-[#E07A3E] font-semibold">
+              AI Concierge
+            </p>
+            <p className="text-sm font-medium text-[#F6F1E6]">
+              {context.verifiedRoom ? `Room ${context.verifiedRoom}` : 'Ask Aria'}
+            </p>
+          </div>
+        </button>
+      )}
 
-      {/* ── Chat drawer ─────────────────────────────────────────────────────── */}
+      {/* Main Chat Drawer Window */}
       {isOpen && (
-        <div
-          id="chat-widget-drawer"
-          style={{
-            position: 'fixed', bottom: 100, right: 28, zIndex: 999,
-            width: 420, maxWidth: 'calc(100vw - 32px)',
-            height: 580, maxHeight: 'calc(100vh - 140px)',
-            borderRadius: 20, overflow: 'hidden',
-            background: 'linear-gradient(180deg, #1a1730 0%, #0f0c29 100%)',
-            border: '1px solid rgba(226,185,111,0.25)',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(226,185,111,0.1)',
-            display: 'flex', flexDirection: 'column',
-            animation: 'chat-slide-in 0.25s ease-out',
-          }}
+        <aside
+          className={`fixed bottom-6 right-6 z-50 flex flex-col overflow-hidden rounded-2xl bg-[#0F1B1A]/95 backdrop-blur-xl border border-[#2F5C52]/40 shadow-2xl text-[#F6F1E6] transition-all duration-300 ${
+            isExpanded
+              ? 'w-[92vw] h-[85vh] sm:w-[680px] sm:h-[750px]'
+              : 'w-[94vw] h-[580px] sm:w-[420px]'
+          }`}
+          aria-label="AI Concierge dialogue"
+          role="dialog"
+          aria-modal="true"
         >
           {/* Header */}
-          <div style={{
-            padding: '14px 18px',
-            background: 'linear-gradient(135deg, rgba(226,185,111,0.12), rgba(226,185,111,0.05))',
-            borderBottom: '1px solid rgba(226,185,111,0.15)',
-            display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
-          }}>
-            <div style={{
-              width: 40, height: 40, borderRadius: '50%',
-              background: `linear-gradient(135deg, ${GOLD}, #c8914a)`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 20, flexShrink: 0,
-            }}>✨</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ margin: 0, color: '#fff', fontWeight: 700, fontSize: 15 }}>Aria</p>
-              <p style={{ margin: 0, color: GOLD, fontSize: 12 }}>
-                SmartHotel AI Concierge
-                {' '}
-                <span style={{
-                  display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
-                  background: isConnected ? '#48bb78' : '#718096',
-                  verticalAlign: 'middle', marginLeft: 4,
-                }} />
-              </p>
+          <header className="flex items-center justify-between border-b border-[#2F5C52]/30 bg-[#16302C]/80 px-4 py-3.5 backdrop-blur-md">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#E07A3E] text-white shadow-sm">
+                <Sparkles className="h-4 w-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-[#F6F1E6]">Aria · AI Concierge</h3>
+                  <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                </div>
+                <p className="text-[11px] text-[#A2B5AF]">
+                  {context.verifiedRoom ? (
+                    <span className="text-[#E07A3E] font-medium">
+                      Room {context.verifiedRoom} • Verified Stay
+                    </span>
+                  ) : (
+                    'SmartHotel Maskeliya Guest Assistant'
+                  )}
+                </p>
+              </div>
             </div>
-            {!isEscalated && (
+
+            <div className="flex items-center gap-1 text-[#A2B5AF]">
               <button
-                id="chat-escalate-btn"
-                onClick={handleEscalate}
-                title="Talk to a Human"
-                style={{
-                  background: GOLD_DIM, border: `1px solid rgba(226,185,111,0.3)`,
-                  borderRadius: 8, color: GOLD, fontSize: 12, padding: '5px 10px',
-                  cursor: 'pointer', whiteSpace: 'nowrap', transition: 'background 0.2s',
-                }}
-              >🗣 Staff</button>
-            )}
-            {isEscalated && (
-              <span style={{ fontSize: 11, color: '#48bb78', fontWeight: 600 }}>👥 Staff Notified</span>
-            )}
-          </div>
+                onClick={resetChat}
+                className="rounded-lg p-1.5 hover:bg-[#244741] hover:text-white transition-colors"
+                title="Reset conversation"
+                aria-label="Reset conversation"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="rounded-lg p-1.5 hover:bg-[#244741] hover:text-white transition-colors hidden sm:block"
+                title={isExpanded ? 'Restore window size' : 'Expand window'}
+                aria-label={isExpanded ? 'Restore window size' : 'Expand window'}
+              >
+                {isExpanded ? (
+                  <Minimize2 className="h-4 w-4" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" />
+                )}
+              </button>
+              <button
+                onClick={() => setIsOpen(false)}
+                className="rounded-lg p-1.5 hover:bg-[#244741] hover:text-white transition-colors"
+                title="Close chat"
+                aria-label="Close chat"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </header>
 
-          {/* Quick actions */}
-          {bubbles.length <= 1 && (
-            <div style={{
-              padding: '10px 14px 0',
-              display: 'flex', flexWrap: 'wrap', gap: 6, flexShrink: 0,
-            }}>
-              {QUICK_ACTIONS.map(action => (
-                <button
-                  key={action.label}
-                  onClick={() => action.message ? sendMessage(action.message) : handleEscalate()}
-                  style={{
-                    background: GOLD_DIM, border: `1px solid rgba(226,185,111,0.2)`,
-                    borderRadius: 20, color: '#e2e8f0', fontSize: 12, padding: '5px 11px',
-                    cursor: 'pointer', transition: 'all 0.15s', whiteSpace: 'nowrap',
-                  }}
-                  onMouseEnter={e => {
-                    (e.currentTarget as HTMLElement).style.background = 'rgba(226,185,111,0.25)'
-                  }}
-                  onMouseLeave={e => {
-                    (e.currentTarget as HTMLElement).style.background = GOLD_DIM
-                  }}
-                >
-                  {action.label}
-                </button>
-              ))}
+          {/* Active Requests Status Banner (if any open) */}
+          {activeRequests.some(
+            (r) => r.status === 'REQUEST_PENDING' || r.status === 'TASK_CREATED' || r.status === 'ASSIGNED',
+          ) && (
+            <div className="border-b border-[#2F5C52]/30 bg-[#142824] px-4 py-2 text-xs flex items-center justify-between text-[#F6F1E6]">
+              <span className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-[#E07A3E] animate-ping" />
+                <span className="font-medium text-[#E07A3E]">
+                  {activeRequests.filter(
+                    (r) => r.status !== 'COMPLETED' && r.status !== 'FAILED',
+                  ).length}{' '}
+                  Active Operational Request(s)
+                </span>
+              </span>
+              <span className="text-[11px] text-[#A2B5AF]">Live Status Connected</span>
             </div>
           )}
 
-          {/* Message list */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {bubbles.map(bubble => (
-              <ChatBubbleItem key={bubble.id} bubble={bubble} />
-            ))}
-            {isSending && !isStreaming && (
-              <TypingIndicator />
+          {/* Messages Scroll Area */}
+          <div
+            className="flex-1 overflow-y-auto p-4 space-y-4 text-sm"
+            role="log"
+            aria-live="polite"
+            aria-relevant="additions text"
+          >
+            {messages.map((msg) => {
+              const isUser = msg.role === 'user'
+              // Find any corresponding active service request
+              const matchingReq = msg.serviceRequestId
+                ? activeRequests.find((r) => r.requestId === msg.serviceRequestId)
+                : null
+
+              return (
+                <div
+                  key={msg.id}
+                  className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}
+                >
+                  <div
+                    className={`max-w-[85%] rounded-2xl px-4 py-3 leading-relaxed shadow-sm ${
+                      isUser
+                        ? 'bg-[#E07A3E] text-white rounded-br-none'
+                        : 'bg-[#16302C] text-[#F6F1E6] rounded-bl-none border border-[#2F5C52]/30'
+                    }`}
+                  >
+                    <p className="whitespace-pre-wrap">{msg.content}</p>
+
+                    {/* Associated service request card */}
+                    {matchingReq && renderRequestStatusBadge(matchingReq)}
+                  </div>
+
+                  <span className="mt-1 px-1 text-[10px] text-[#7C9188]">
+                    {msg.createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              )
+            })}
+
+            {/* Streaming Indicator */}
+            {isStreaming && (
+              <div className="flex items-center gap-2 text-xs text-[#A2B5AF] italic px-2">
+                <span className="h-2 w-2 rounded-full bg-[#E07A3E] animate-bounce" />
+                Aria is typing...
+                <button
+                  onClick={cancelStream}
+                  className="ml-2 text-[11px] text-rose-300 underline hover:text-rose-200 not-italic"
+                >
+                  Stop
+                </button>
+              </div>
             )}
-            <div ref={bottomRef} />
+
+            {error && (
+              <div className="rounded-xl border border-rose-500/30 bg-rose-950/40 p-3 text-xs text-rose-200 flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 text-rose-400 mt-0.5 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
           </div>
 
-          {/* Input area */}
-          <div style={{
-            borderTop: '1px solid rgba(226,185,111,0.12)',
-            padding: '12px 14px',
-            display: 'flex', gap: 10, alignItems: 'flex-end', flexShrink: 0,
-            background: 'rgba(255,255,255,0.02)',
-          }}>
-            <textarea
-              ref={textareaRef}
-              id="chat-message-input"
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Type a message… (Enter to send)"
-              disabled={isSending || isEscalated}
-              rows={1}
-              style={{
-                flex: 1, background: 'rgba(255,255,255,0.07)',
-                border: '1px solid rgba(226,185,111,0.2)', borderRadius: 12,
-                color: '#e2e8f0', fontSize: 14, padding: '10px 14px',
-                resize: 'none', outline: 'none', maxHeight: 100, overflowY: 'auto',
-                transition: 'border-color 0.2s', lineHeight: 1.5,
+          {/* Quick Action Suggestion Chips */}
+          <div className="px-3 py-2 bg-[#122420]/80 border-t border-[#2F5C52]/20 overflow-x-auto flex items-center gap-2 no-scrollbar">
+            {QUICK_ACTIONS.map((action, i) => (
+              <button
+                key={i}
+                disabled={isStreaming}
+                onClick={() => sendMessage(action.message)}
+                className="whitespace-nowrap rounded-full border border-[#2F5C52]/40 bg-[#16302C] px-3 py-1.5 text-xs text-[#A2B5AF] hover:border-[#E07A3E]/70 hover:text-white transition-all disabled:opacity-40"
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Chat Input Footer */}
+          <footer className="border-t border-[#2F5C52]/30 bg-[#16302C]/90 p-3">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                handleSend()
               }}
-              onFocus={e => { (e.target as HTMLElement).style.borderColor = GOLD }}
-              onBlur={e => { (e.target as HTMLElement).style.borderColor = 'rgba(226,185,111,0.2)' }}
-            />
-            <button
-              id="chat-send-btn"
-              onClick={() => sendMessage(input)}
-              disabled={isSending || !input.trim() || isEscalated}
-              style={{
-                width: 42, height: 42, borderRadius: '50%',
-                background: input.trim() && !isSending
-                  ? `linear-gradient(135deg, ${GOLD}, #c8914a)`
-                  : 'rgba(255,255,255,0.08)',
-                border: 'none', cursor: input.trim() && !isSending ? 'pointer' : 'not-allowed',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 18, transition: 'all 0.2s', flexShrink: 0,
-              }}
+              className="flex items-end gap-2"
             >
-              {isSending ? '⟳' : '➤'}
-            </button>
-          </div>
-        </div>
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                value={input}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  isStreaming
+                    ? 'Aria is answering...'
+                    : 'Ask about facilities or request housekeeping / maintenance...'
+                }
+                disabled={isStreaming}
+                className="flex-1 resize-none rounded-xl border border-[#2F5C52]/50 bg-[#0F1B1A] px-3.5 py-2.5 text-sm text-[#F6F1E6] placeholder-[#657D74] focus:border-[#E07A3E] focus:outline-none focus:ring-1 focus:ring-[#E07A3E] transition-all disabled:opacity-50 max-h-28"
+                aria-label="Your message to AI concierge"
+              />
+              <button
+                type="submit"
+                disabled={!input.trim() || isStreaming}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#E07A3E] text-white transition-transform hover:scale-105 disabled:opacity-40 disabled:hover:scale-100 shadow-md"
+                aria-label="Send message"
+              >
+                <Send className="h-4 w-4" />
+              </button>
+            </form>
+            <p className="mt-2 text-center text-[10px] text-[#7C9188]">
+              Grounding powered by SmartHotel Concierge · Room service verified via booking record
+            </p>
+          </footer>
+        </aside>
       )}
-
-      <style>{`
-        @keyframes chat-slide-in {
-          from { opacity: 0; transform: translateY(16px) scale(0.97); }
-          to   { opacity: 1; transform: translateY(0)    scale(1);    }
-        }
-        @keyframes blink {
-          0%, 100% { opacity: 1; } 50% { opacity: 0; }
-        }
-        @keyframes dot-bounce {
-          0%, 100% { transform: translateY(0); }
-          50%       { transform: translateY(-4px); }
-        }
-      `}</style>
     </>
-  )
-}
-
-// ── Sub-components ────────────────────────────────────────────────────────────
-
-function ChatBubbleItem({ bubble }: { bubble: ChatBubble }) {
-  const isUser = bubble.role === 'user'
-  return (
-    <div style={{
-      display: 'flex', flexDirection: isUser ? 'row-reverse' : 'row',
-      gap: 8, alignItems: 'flex-end',
-    }}>
-      {!isUser && (
-        <div style={{
-          width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-          background: 'linear-gradient(135deg, #e2b96f, #c8914a)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14,
-        }}>✨</div>
-      )}
-      <div style={{ maxWidth: '78%', display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div style={{
-          background:   isUser ? 'linear-gradient(135deg, #e2b96f, #c8914a)' : 'rgba(255,255,255,0.08)',
-          color:        isUser ? '#1a1730' : '#e2e8f0',
-          borderRadius: isUser ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-          padding: '10px 14px', fontSize: 14, lineHeight: 1.55, wordBreak: 'break-word',
-        }}>
-          {bubble.content}
-          {bubble.isStreaming && (
-            <span style={{ animation: 'blink 0.7s infinite', marginLeft: 2 }}>▌</span>
-          )}
-        </div>
-        {/* Ticket card */}
-        {bubble.ticketRef && (
-          <div style={{
-            background: 'rgba(72,187,120,0.1)', border: '1px solid rgba(72,187,120,0.3)',
-            borderRadius: 10, padding: '8px 12px', fontSize: 12, color: '#48bb78',
-          }}>
-            🎫 Ticket logged: <strong>{bubble.ticketRef}</strong>
-            <span style={{
-              display: 'inline-block', marginLeft: 8,
-              background: 'rgba(72,187,120,0.15)', borderRadius: 10, padding: '1px 7px',
-              fontSize: 11,
-            }}>Pending</span>
-          </div>
-        )}
-        {bubble.isFallback && (
-          <div style={{ fontSize: 11, color: '#ed8936', marginLeft: 4 }}>
-            ⚠️ AI offline — front desk notified
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function TypingIndicator() {
-  return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-      <div style={{
-        width: 28, height: 28, borderRadius: '50%',
-        background: 'linear-gradient(135deg, #e2b96f, #c8914a)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0,
-      }}>✨</div>
-      <div style={{
-        background: 'rgba(255,255,255,0.08)', borderRadius: '18px 18px 18px 4px',
-        padding: '12px 18px', display: 'flex', gap: 5, alignItems: 'center',
-      }}>
-        {[0, 1, 2].map(i => (
-          <div key={i} style={{
-            width: 7, height: 7, borderRadius: '50%', background: '#e2b96f',
-            animation: `dot-bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
-          }} />
-        ))}
-      </div>
-    </div>
   )
 }

@@ -1,4 +1,4 @@
-import { Map, MapMarker, MarkerContent, MarkerTooltip } from "@/components/ui/mapcn-marker-content";
+import { Map,MapMarker,MarkerContent,MarkerTooltip } from "@/components/ui/mapcn-marker-content";
 
 const locations = [
   { id: 1, name: "SmartHotel Maskeliya Lodge", lng: 80.5750, lat: 6.8336 },

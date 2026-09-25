@@ -10,6 +10,7 @@ public class Hotel : BaseEntity
     public string Email { get; set; } = string.Empty;
     public int TotalFloors { get; set; }
     public int TotalRooms { get; set; }
+    public string BaseCurrency { get; set; } = "LKR";
 
     public ICollection<Department> Departments { get; set; } = new List<Department>();
     public ICollection<RoomType> RoomTypes { get; set; } = new List<RoomType>();

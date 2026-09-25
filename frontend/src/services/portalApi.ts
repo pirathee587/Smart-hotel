@@ -4,18 +4,22 @@
  * Token is passed in explicitly to keep the service stateless (no global interceptor).
  */
 
-import axios, { type AxiosInstance } from 'axios'
 import type {
-  ChatMessageDto,
-  SendMessageRequest,
-  SendMessageResult,
-  ActiveRequestDto,
-  EscalateRequest,
-  EscalateResult,
-  SubmitCsatRequest,
+ActiveRequestDto,
+ChatMessageDto,
+ConciergeConversationHistoryDto,
+ConciergeServiceRequestDto,
+EscalateRequest,
+EscalateResult,
+SendMessageRequest,
+SendMessageResult,
+SubmitCsatRequest,
 } from '@/types/chat'
+import axios,{ type AxiosInstance } from 'axios'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000'
+export const CONCIERGE_BASE = process.env.NEXT_PUBLIC_CONCIERGE_API_URL ?? 'http://localhost:8000'
+
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -75,14 +79,25 @@ function createClient(token: string): AxiosInstance {
   })
 }
 
+function createConciergeClient(token: string): AxiosInstance {
+  return axios.create({
+    baseURL: CONCIERGE_BASE,
+    headers: { Authorization: `Bearer ${token}` },
+    timeout: 15_000,
+  })
+}
+
+
 // ── Portal API ─────────────────────────────────────────────────────────────────
 
 export const portalApi = {
   /**
    * Fetches all bookings, payment status, and service requests for the authenticated guest.
    */
-  async getPortalData(token: string): Promise<PortalData> {
-    const { data } = await createClient(token).get<PortalData>('/api/v1/portal/me')
+  async getPortalData(token: string, signal?: AbortSignal): Promise<PortalData> {
+    const { data } = await createClient(token).get<PortalData>('/api/v1/portal/me', {
+      signal,
+    })
     return data
   },
 
@@ -93,10 +108,11 @@ export const portalApi = {
   async lookupBooking(
     referenceCode: string,
     email: string,
+    signal?: AbortSignal,
   ): Promise<BookingLookupResult> {
     const { data } = await axios.get<BookingLookupResult>(
       `${API_BASE}/api/v1/auth/portal-lookup`,
-      { params: { referenceCode: referenceCode.toUpperCase(), email } },
+      { params: { referenceCode: referenceCode.toUpperCase(), email }, signal },
     )
     return data
   },
@@ -172,10 +188,11 @@ export const portalApi = {
     token: string,
     bookingId: string,
     limit = 50,
+    signal?: AbortSignal,
   ): Promise<ChatMessageDto[]> {
     const { data } = await createClient(token).get<ChatMessageDto[]>(
       '/api/v1/chat/history',
-      { params: { bookingId, limit } },
+      { params: { bookingId, limit }, signal },
     )
     return data
   },
@@ -201,10 +218,11 @@ export const portalApi = {
   async getActiveRequests(
     token: string,
     bookingId: string,
+    signal?: AbortSignal,
   ): Promise<ActiveRequestDto[]> {
     const { data } = await createClient(token).get<ActiveRequestDto[]>(
       '/api/v1/chat/requests',
-      { params: { bookingId } },
+      { params: { bookingId }, signal },
     )
     return data
   },
@@ -218,4 +236,36 @@ export const portalApi = {
   ): Promise<void> {
     await createClient(token).post('/api/v1/chat/csat', req)
   },
+
+  /**
+   * Phase 8A: Fetches conversation message history from AI Concierge service.
+   * Strictly server-verified for the authenticated guest.
+   */
+  async getConciergeHistory(
+    token: string,
+    conversationId: string,
+    signal?: AbortSignal,
+  ): Promise<ConciergeConversationHistoryDto> {
+    const { data } = await createConciergeClient(token).get<ConciergeConversationHistoryDto>(
+      '/api/v1/concierge/history',
+      { params: { conversation_id: conversationId }, signal },
+    )
+    return data
+  },
+
+  /**
+   * Phase 8A: Fetches live service requests lifecycle statuses for the guest
+   * directly from AI Concierge service (REQUEST_PENDING, TASK_CREATED, ASSIGNED, COMPLETED, FAILED).
+   */
+  async getConciergeRequests(
+    token: string,
+    signal?: AbortSignal,
+  ): Promise<ConciergeServiceRequestDto[]> {
+    const { data } = await createConciergeClient(token).get<ConciergeServiceRequestDto[]>(
+      '/api/v1/concierge/requests',
+      { signal },
+    )
+    return data
+  },
 }
+

@@ -3,8 +3,10 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SmartHotel.Identity.Application.Features.Auth.Models;
+using SmartHotel.Identity.Application.Interfaces;
 using SmartHotel.Identity.Infrastructure.Persistence;
 using Xunit;
 
@@ -43,7 +45,8 @@ public class AuthIntegrationTests : IClassFixture<CustomWebApplicationFactory>
         };
 
         var response = await _client.PostAsJsonAsync("/api/v1/auth/employee/login", loginRequest);
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var responseBody = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, "the login response was: {0}", responseBody);
 
         var loginResult = await response.Content.ReadFromJsonAsync<LoginResponse>();
         loginResult.Should().NotBeNull();
@@ -64,7 +67,8 @@ public class AuthIntegrationTests : IClassFixture<CustomWebApplicationFactory>
         };
 
         var loginResponse = await _client.PostAsJsonAsync("/api/v1/auth/employee/login", loginRequest);
-        loginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var loginResponseBody = await loginResponse.Content.ReadAsStringAsync();
+        loginResponse.StatusCode.Should().Be(HttpStatusCode.OK, "the login response was: {0}", loginResponseBody);
 
         var loginData = await loginResponse.Content.ReadFromJsonAsync<LoginResponse>();
         loginData.Should().NotBeNull();
@@ -170,7 +174,7 @@ public class AuthIntegrationTests : IClassFixture<CustomWebApplicationFactory>
 
         var loginData = await loginResponse.Content.ReadFromJsonAsync<LoginResponse>();
         loginData!.AccessToken.Should().NotBeNullOrWhiteSpace();
-        loginData.User.Role.Should().Be("Customer");
+        loginData.User.Role.Should().Be("Guest");
 
         // 6. Access protected /api/v1/auth/me endpoint
         var meRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/me");

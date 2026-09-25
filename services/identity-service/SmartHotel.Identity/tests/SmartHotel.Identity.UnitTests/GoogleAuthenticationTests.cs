@@ -195,12 +195,12 @@ public class GoogleAuthenticationTests
 
         result.Succeeded.Should().BeTrue();
         result.Data.Should().NotBeNull();
-        result.Data!.User.Role.Should().Be("Customer");
+        result.Data!.User.Role.Should().Be("Guest");
         result.Data.User.Email.Should().Be(customerEmail);
 
         var handler = new JwtSecurityTokenHandler();
         var jwt = handler.ReadJwtToken(result.Data.Token);
-        jwt.Claims.Should().Contain(c => c.Type == "role" && c.Value == "Customer");
+        jwt.Claims.Should().Contain(c => c.Type == "role" && c.Value == "Guest");
     }
 
     [Fact]

@@ -56,4 +56,19 @@ public class FakeEmailService : IEmailService
 
         return Task.CompletedTask;
     }
+
+    public Task SendWelcomeWithCredentialsAsync(string recipientEmail, string recipientName, string temporaryPassword, CancellationToken cancellationToken = default)
+    {
+        var loginUrl = "http://localhost:3000/staff/login";
+
+        _logger.LogInformation("================================================================================");
+        _logger.LogInformation(" [FAKE EMAIL SERVICE] Staff Welcome & Credentials Sent");
+        _logger.LogInformation(" To: {RecipientName} <{RecipientEmail}>", recipientName, recipientEmail);
+        _logger.LogInformation(" Temporary Password: {Password}", temporaryPassword);
+        _logger.LogInformation(" Login URL: {Url}", loginUrl);
+        _logger.LogInformation(" Note: Mandatory password reset on first login.");
+        _logger.LogInformation("================================================================================");
+
+        return Task.CompletedTask;
+    }
 }

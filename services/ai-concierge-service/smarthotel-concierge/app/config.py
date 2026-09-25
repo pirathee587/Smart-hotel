@@ -39,5 +39,22 @@ class Settings(BaseSettings):
     CHROMA_PERSIST_DIR: str = "./chroma_db"
     RAG_TOP_K: int = 3
 
+    # Multi-Replica Shared PostgreSQL Persistence
+    POSTGRES_HOST: str = "postgres"
+    POSTGRES_PORT: int = 5432
+    POSTGRES_DB: str = "smarthotel_concierge_db"
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASSWORD: str = "postgres"
+    DATABASE_URL: str | None = None
+
+    # Pluggable LLM Provider
+    OPENAI_API_KEY: str | None = None
+    OPENAI_MODEL: str = "gpt-4o-mini"
+    DEEPSEEK_API_KEY: str | None = None
+    DEEPSEEK_MODEL: str = "deepseek-flash"
+    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
+    GEMINI_API_KEY: str | None = None
+    LLM_PROVIDER: str = "fallback"  # 'fallback', 'openai', or 'deepseek'
+
 
 settings = Settings()

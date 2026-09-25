@@ -14,6 +14,7 @@ public record KioskBookingDto
     public DateOnly CheckOutDate { get; init; }
     public int GuestCount { get; init; }
     public decimal TotalAmount { get; init; }
+    public string? Currency { get; init; }
     public BookingStatus Status { get; init; }
     public bool CanCheckIn { get; init; }
     public bool CanCheckOut { get; init; }

@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import { CheckCircle2,MessageSquarePlus,Star,X } from "lucide-react";
 import Image from "next/image";
-import { Star, CheckCircle2, MessageSquarePlus, X, Plus, Sparkles, Filter } from "lucide-react";
+import React,{ useState } from "react";
 
 export interface ReviewItem {
   id: string;

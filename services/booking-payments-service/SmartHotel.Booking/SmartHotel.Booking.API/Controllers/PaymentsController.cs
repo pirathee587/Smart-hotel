@@ -2,7 +2,14 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SmartHotel.Booking.Application.Features.Payments.Commands;
+using SmartHotel.Booking.Application.Features.Payments.DTOs;
+using SmartHotel.Booking.Application.Features.Payments.Queries;
 using SmartHotel.Booking.Application.Interfaces;
+using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
+using SmartHotel.Booking.Domain.Enums;
+using SmartHotel.Booking.Infrastructure.Persistence;
+using SmartHotel.Authorization;
 
 namespace SmartHotel.Booking.API.Controllers;
 
@@ -11,10 +18,14 @@ namespace SmartHotel.Booking.API.Controllers;
 public class PaymentsController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly BookingDbContext _db;
+    private readonly IAuthorizationService _authorization;
 
-    public PaymentsController(IMediator mediator)
+    public PaymentsController(IMediator mediator, BookingDbContext db, IAuthorizationService authorization)
     {
         _mediator = mediator;
+        _db = db;
+        _authorization = authorization;
     }
 
     /// <summary>
@@ -27,6 +38,9 @@ public class PaymentsController : ControllerBase
     [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreatePayHereOrder([FromBody] CreatePayHereOrderRequest request, CancellationToken ct)
     {
+        var booking = await _db.Bookings.AsNoTracking().FirstOrDefaultAsync(b => b.Id == request.BookingId, ct);
+        if (booking is null) return NotFound();
+        if (!IsOwner() && booking.CustomerId != UserId()) return Forbid();
         var result = await _mediator.Send(new CreatePayHereOrderCommand(request), ct);
         if (!result.Succeeded)
         {
@@ -112,4 +126,45 @@ public class PaymentsController : ControllerBase
         // PayHere expects 200 OK
         return Ok(new { status = "OK", message = result.Message });
     }
+
+    /// <summary>
+    /// Get payment details for a booking (Admin / Staff).
+    /// </summary>
+    [HttpGet("booking/{bookingId:guid}")]
+    [Authorize]
+    [ProducesResponseType(typeof(PaymentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetPaymentByBookingId(Guid bookingId, CancellationToken ct)
+    {
+        var booking = await _db.Bookings.AsNoTracking().FirstOrDefaultAsync(b => b.Id == bookingId, ct);
+        if (booking is null) return NotFound();
+        var financeOrFrontOffice = IsFinance() || (await _authorization.AuthorizeAsync(User, HotelPolicies.FrontOfficeOperations)).Succeeded;
+        if (!IsOwner() && !financeOrFrontOffice && booking.CustomerId != UserId()) return Forbid();
+        var result = await _mediator.Send(new GetPaymentByBookingIdQuery(bookingId), ct);
+        if (!result.Succeeded)
+        {
+            return NotFound(new { message = result.Message });
+        }
+        return Ok(result.Data);
+    }
+
+    /// <summary>
+    /// Manually confirm payment for a booking (Admin / FrontDesk).
+    /// </summary>
+    [HttpPost("{bookingId:guid}/confirm")]
+    [Authorize]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ConfirmPaymentManual(Guid bookingId, [FromBody] ConfirmPaymentManualDto? dto, CancellationToken ct)
+    {
+        await Task.CompletedTask;
+        return StatusCode(StatusCodes.Status410Gone, new { message = "Manual payment confirmation is disabled. A verified provider webhook is required." });
+    }
+
+    private Guid? UserId() => Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var id) ? id : null;
+    private string Role() => User.FindFirstValue(ClaimTypes.Role) ?? User.FindFirstValue("role") ?? "";
+    private bool IsOwner() => Role() == "Owner";
+    private bool IsFinance() => string.Equals(User.FindFirstValue("departmentCode"), "FINANCE", StringComparison.OrdinalIgnoreCase);
 }
+
+public record ConfirmPaymentManualDto(string? PaymentReference, string? Notes);

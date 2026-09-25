@@ -21,8 +21,12 @@ public class TaskEnums {
     public enum TaskStatus {
         Pending,
         Assigned,
+        Accepted,
         InProgress,
         Completed,
+        AwaitingInspection,
+        InspectionRejected,
+        InspectionApproved,
         Cancelled,
         Escalated
     }
@@ -36,10 +40,33 @@ public class TaskEnums {
 
     public enum KdsStatus {
         Received,
+        Accepted,
         Preparing,
         Ready,
+        Collected,
         Delivered,
         Cancelled
+    }
+
+    public enum OrderType {
+        Restaurant,
+        RoomService
+    }
+
+    public enum ChargeStatus {
+        PendingSubmission,
+        PendingFinanceConfirmation,
+        Invoiced,
+        Failed,
+        Waived,
+        Cancelled
+    }
+
+    public enum OutboxStatus {
+        Pending,
+        Processing,
+        Confirmed,
+        Failed
     }
 
     public enum AttendanceStatus {

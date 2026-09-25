@@ -178,7 +178,7 @@ public class MagicLinkAuthTests
         verifyResult.Data.Should().NotBeNull();
         verifyResult.Data!.AccessToken.Should().NotBeNullOrWhiteSpace();
         verifyResult.Data.TokenType.Should().Be("Bearer");
-        verifyResult.Data.User.Role.Should().Be("Customer");
+        verifyResult.Data.User.Role.Should().Be("Guest");
         verifyResult.Data.User.Email.Should().Be(email);
     }
 

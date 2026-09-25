@@ -1,0 +1,3 @@
+package com.smarthotel.fieldops.domain.repository;
+import com.smarthotel.fieldops.domain.model.LeavePolicy; import org.springframework.data.jpa.repository.*; import org.springframework.data.repository.query.Param; import java.time.LocalDate; import java.util.*;
+public interface LeavePolicyRepository extends JpaRepository<LeavePolicy,UUID> { List<LeavePolicy> findByActiveTrueOrderByLeaveTypeAsc(); @Query("select p from LeavePolicy p where p.id=:id and p.active=true and p.effectiveFrom<=:date and (p.effectiveTo is null or p.effectiveTo>=:date)") Optional<LeavePolicy> effective(@Param("id") UUID id,@Param("date") LocalDate date); }

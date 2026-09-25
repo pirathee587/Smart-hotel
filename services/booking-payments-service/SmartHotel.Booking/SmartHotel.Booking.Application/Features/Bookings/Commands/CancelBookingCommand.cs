@@ -14,6 +14,7 @@ public record CancelBookingResponse
     public Guid BookingId { get; init; }
     public BookingStatus Status { get; init; }
     public decimal TotalAmount { get; init; }
+    public string? Currency { get; init; }
     public decimal RefundAmount { get; init; }
     public decimal CancellationFee { get; init; }
     public decimal RefundPercentage { get; init; }
@@ -75,12 +76,24 @@ public class CancelBookingCommandHandler : IRequestHandler<CancelBookingCommand,
             var completedPayment = booking.Payments.FirstOrDefault(p => p.Status == PaymentStatus.Completed);
             if (completedPayment != null && refundAmount > 0)
             {
-                completedPayment.ApplyRefund(refundAmount, command.Reason ?? tierDesc);
+                // Cancellation calculates eligibility only. Finance approval and a verified
+                // provider response are required before the payment is marked refunded.
+                _context.RefundRequests.Add(new RefundRequest
+                {
+                    PaymentId = completedPayment.Id,
+                    Amount = refundAmount,
+                    Currency = completedPayment.Currency,
+                    Description = command.Reason ?? tierDesc,
+                    IdempotencyKey = $"booking-cancellation:{booking.Id}",
+                    SubmittedByUserId = command.CustomerId ?? booking.CustomerId,
+                    SubmittedByDepartmentId = Guid.Empty,
+                    ExecutionStatus = FinanceExecutionStatus.NotStarted
+                });
 
                 // Write payment.refunded outbox message
                 _context.OutboxMessages.Add(new OutboxMessage
                 {
-                    Type = "payment.refunded",
+                    Type = "payment.refund-requested",
                     Content = JsonSerializer.Serialize(new
                     {
                         PaymentId = completedPayment.Id,
@@ -89,13 +102,29 @@ public class CancelBookingCommandHandler : IRequestHandler<CancelBookingCommand,
                         FeeAmount = feeAmount,
                         RefundPercentage = refundPct,
                         Reason = command.Reason ?? tierDesc,
-                        OccurredOnUtc = DateTime.UtcNow
+                        OccurredOnUtc = DateTime.UtcNow,
+                        Status = "PendingFinanceApproval"
                     })
                 });
             }
         }
 
         booking.Cancel();
+
+        _context.FrontOfficeAuditLogs.Add(new FrontOfficeAuditLog
+        {
+            BookingId = booking.Id,
+            BookingReference = booking.BookingReference,
+            Action = command.CustomerId.HasValue ? "GuestCancellation" : "StaffCancellationOverride",
+            ActorUserId = command.CustomerId ?? booking.CustomerId,
+            ActorRole = command.CustomerId.HasValue ? "Guest" : "FrontOfficeManager",
+            Source = command.CustomerId.HasValue ? "Portal" : "FrontOffice",
+            Reason = command.Reason ?? tierDesc,
+            PreviousState = BookingStatus.Confirmed.ToString(),
+            NewState = BookingStatus.Cancelled.ToString(),
+            Details = $"Booking cancelled. Refund: {refundAmount}, Fee: {feeAmount}. Reason: {command.Reason ?? tierDesc}",
+            TimestampUtc = DateTime.UtcNow
+        });
 
         // Write booking.cancelled outbox message
         _context.OutboxMessages.Add(new OutboxMessage
@@ -110,6 +139,7 @@ public class CancelBookingCommandHandler : IRequestHandler<CancelBookingCommand,
                 TotalAmount = booking.TotalAmount,
                 RefundAmount = refundAmount,
                 FeeAmount = feeAmount,
+                Reason = command.Reason ?? tierDesc,
                 OccurredOnUtc = DateTime.UtcNow
             })
         });
@@ -121,6 +151,7 @@ public class CancelBookingCommandHandler : IRequestHandler<CancelBookingCommand,
             BookingId = booking.Id,
             Status = booking.Status,
             TotalAmount = booking.TotalAmount,
+            Currency = booking.Currency,
             RefundAmount = refundAmount,
             CancellationFee = feeAmount,
             RefundPercentage = refundPct,

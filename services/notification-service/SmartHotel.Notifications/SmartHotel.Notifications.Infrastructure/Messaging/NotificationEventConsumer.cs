@@ -63,7 +63,9 @@ public class NotificationEventConsumer : BackgroundService
                     // Bind routing keys
                     string[] routingKeys =
                     {
+                        "task.created",
                         "task.dispatched",
+                        "task.completed",
                         "room.status_changed",
                         "kds.status_changed",
                         "booking.created",
@@ -125,8 +127,16 @@ public class NotificationEventConsumer : BackgroundService
 
         switch (routingKey)
         {
+            case "task.created":
+                await HandleTaskCreatedAsync(root, message, notificationService, dispatcher, ct);
+                break;
+
             case "task.dispatched":
                 await HandleTaskDispatchedAsync(root, message, notificationService, dispatcher, ct);
+                break;
+
+            case "task.completed":
+                await HandleTaskCompletedAsync(root, message, notificationService, dispatcher, ct);
                 break;
 
             case "room.status_changed":
@@ -148,6 +158,58 @@ public class NotificationEventConsumer : BackgroundService
             default:
                 _logger.LogDebug("No specific handler registered for routing key {RoutingKey}", routingKey);
                 break;
+        }
+    }
+
+    private async Task HandleTaskCreatedAsync(
+        JsonElement root,
+        string rawJson,
+        INotificationService notificationService,
+        ISignalRNotificationDispatcher dispatcher,
+        CancellationToken ct)
+    {
+        string? customerIdStr = GetProperty(root, "customerId") ?? GetProperty(root, "CustomerId");
+        if (Guid.TryParse(customerIdStr, out var customerId))
+        {
+            string title = GetProperty(root, "title") ?? "Service Request";
+            string roomNumber = GetProperty(root, "roomNumber") ?? "";
+            string taskId = GetProperty(root, "taskId") ?? "";
+            string refShort = taskId.Length >= 8 ? taskId[..8] : taskId;
+
+            var notif = await notificationService.SendNotificationAsync(
+                customerId,
+                "Request Confirmed",
+                $"Your request '{title}' for Room {roomNumber} has been confirmed (Ref: #{refShort}).",
+                NotificationType.TaskAssigned,
+                rawJson,
+                ct);
+
+            await dispatcher.SendNotificationToUserAsync(customerId, notif, ct);
+        }
+    }
+
+    private async Task HandleTaskCompletedAsync(
+        JsonElement root,
+        string rawJson,
+        INotificationService notificationService,
+        ISignalRNotificationDispatcher dispatcher,
+        CancellationToken ct)
+    {
+        string? customerIdStr = GetProperty(root, "customerId") ?? GetProperty(root, "CustomerId");
+        if (Guid.TryParse(customerIdStr, out var customerId))
+        {
+            string taskId = GetProperty(root, "taskId") ?? "";
+            string refShort = taskId.Length >= 8 ? taskId[..8] : taskId;
+
+            var notif = await notificationService.SendNotificationAsync(
+                customerId,
+                "Request Completed",
+                $"Your hotel service request (#{refShort}) has been completed.",
+                NotificationType.System,
+                rawJson,
+                ct);
+
+            await dispatcher.SendNotificationToUserAsync(customerId, notif, ct);
         }
     }
 

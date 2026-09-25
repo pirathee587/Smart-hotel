@@ -10,6 +10,8 @@ import com.smarthotel.fieldops.domain.model.enums.TaskEnums.TaskRole;
 import com.smarthotel.fieldops.domain.model.enums.TaskEnums.TaskStatus;
 import com.smarthotel.fieldops.domain.repository.EmployeeProfileRepository;
 import com.smarthotel.fieldops.domain.repository.StaffTaskRepository;
+import com.smarthotel.fieldops.service.RoomReadinessClient;
+import com.smarthotel.fieldops.service.MaintenanceIntegrationClient;
 import com.smarthotel.fieldops.dto.TaskDtos.CreateHousekeepingTaskRequest;
 import com.smarthotel.fieldops.dto.TaskDtos.CreateMaintenanceWorkOrderRequest;
 import com.smarthotel.fieldops.dto.TaskDtos.RejectTaskRequest;
@@ -34,6 +36,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.Mockito.*;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -57,9 +60,12 @@ class TaskControllerIntegrationTest {
 
     @MockBean
     private RabbitTemplate rabbitTemplate;
+    @MockBean private RoomReadinessClient roomReadinessClient;
+    @MockBean private MaintenanceIntegrationClient maintenanceIntegrationClient;
 
     private UUID staffId;
     private UUID managerId;
+    private UUID departmentId;
 
     @BeforeEach
     void setUp() {
@@ -68,11 +74,13 @@ class TaskControllerIntegrationTest {
 
         staffId = UUID.randomUUID();
         managerId = UUID.randomUUID();
+        departmentId = UUID.randomUUID();
 
         // Seed staff
         EmployeeProfile staff = EmployeeProfile.builder()
                 .employeeId(staffId)
                 .fullName("Sunil Shantha")
+                .departmentId(departmentId)
                 .role(TaskRole.Housekeeper)
                 .currentFloor(2)
                 .activeTasksCount(0)
@@ -94,11 +102,12 @@ class TaskControllerIntegrationTest {
                 UUID.randomUUID(),
                 "201",
                 UUID.randomUUID(),
+                departmentId,
                 true
         );
 
         mockMvc.perform(post("/api/v1/tasks/housekeeping")
-                        .with(jwt().authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_Manager")).jwt(j -> j.subject(managerId.toString())))
+                        .with(jwt().authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_Manager")).jwt(j -> j.subject(managerId.toString()).claim("role", "Manager").claim("departmentId", departmentId.toString()).claim("departmentCode", "HOUSEKEEPING")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isCreated())
@@ -116,15 +125,21 @@ class TaskControllerIntegrationTest {
                 TaskPriority.Urgent,
                 "Table Lamp",
                 "Room 105",
+                UUID.randomUUID(),
+                "105",
+                UUID.randomUUID(),
+                "Critical",
+                "Exposed conductor",
                 new BigDecimal("1500.00"),
                 true,
                 1,
                 UUID.randomUUID(),
+                departmentId,
                 false
         );
 
         mockMvc.perform(post("/api/v1/tasks/maintenance")
-                        .with(jwt().authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_Manager")).jwt(j -> j.subject(managerId.toString())))
+                        .with(jwt().authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_Manager")).jwt(j -> j.subject(managerId.toString()).claim("role", "Manager").claim("departmentId", departmentId.toString()).claim("departmentCode","MAINTENANCE")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isCreated())
@@ -134,21 +149,22 @@ class TaskControllerIntegrationTest {
     }
 
     @Test
-    @DisplayName("Staff accepts assigned task -> status InProgress")
+    @DisplayName("Staff accepts assigned task -> status Accepted")
     void acceptTask_Success() throws Exception {
         HousekeepingTask task = HousekeepingTask.builder()
                 .title("Clean 202")
                 .requiredRole(TaskRole.Housekeeper)
                 .status(TaskStatus.Assigned)
                 .assignedEmployeeId(staffId)
+                .departmentId(departmentId)
                 .build();
         HousekeepingTask saved = staffTaskRepository.save(task);
 
         mockMvc.perform(post("/api/v1/tasks/" + saved.getId() + "/accept")
-                        .with(jwt().jwt(j -> j.subject(staffId.toString())))
+                        .with(jwt().jwt(j -> j.subject(staffId.toString()).claim("departmentId", departmentId.toString())))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("InProgress"));
+                .andExpect(jsonPath("$.status").value("Accepted"));
     }
 
     @Test
@@ -159,6 +175,7 @@ class TaskControllerIntegrationTest {
                 .requiredRole(TaskRole.Housekeeper)
                 .status(TaskStatus.Assigned)
                 .assignedEmployeeId(staffId)
+                .departmentId(departmentId)
                 .rejectionCount(0)
                 .build();
         HousekeepingTask saved = staffTaskRepository.save(task);
@@ -166,7 +183,7 @@ class TaskControllerIntegrationTest {
         RejectTaskRequest req = new RejectTaskRequest("Currently busy");
 
         mockMvc.perform(post("/api/v1/tasks/" + saved.getId() + "/reject")
-                        .with(jwt().jwt(j -> j.subject(staffId.toString())))
+                        .with(jwt().jwt(j -> j.subject(staffId.toString()).claim("departmentId", departmentId.toString())))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isOk())
@@ -181,13 +198,65 @@ class TaskControllerIntegrationTest {
                 .requiredRole(TaskRole.Housekeeper)
                 .status(TaskStatus.Assigned)
                 .assignedEmployeeId(staffId)
+                .departmentId(departmentId)
                 .build();
         staffTaskRepository.save(task);
 
         mockMvc.perform(get("/api/v1/tasks/my")
-                        .with(jwt().jwt(j -> j.subject(staffId.toString()))))
+                        .with(jwt().jwt(j -> j.subject(staffId.toString()).claim("departmentId", departmentId.toString()))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].title").value("Clean 204"));
+    }
+
+    @Test
+    @DisplayName("Employee cannot access a task from another department")
+    void getTaskById_OtherDepartment_IsForbiddenByNonDisclosure() throws Exception {
+        HousekeepingTask task = HousekeepingTask.builder()
+                .title("Other department task")
+                .requiredRole(TaskRole.Housekeeper)
+                .departmentId(UUID.randomUUID())
+                .build();
+        HousekeepingTask saved = staffTaskRepository.save(task);
+
+        mockMvc.perform(get("/api/v1/tasks/" + saved.getId())
+                        .with(jwt().jwt(j -> j.subject(staffId.toString()).claim("departmentId", departmentId.toString()))))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("Manager cannot create a task for another department")
+    void createTask_OtherDepartment_IsForbidden() throws Exception {
+        CreateHousekeepingTaskRequest req = new CreateHousekeepingTaskRequest(
+                "Cross department", null, TaskPriority.High, CleaningType.Turnover, false,
+                1, UUID.randomUUID(), "101", UUID.randomUUID(), UUID.randomUUID(), false);
+
+        mockMvc.perform(post("/api/v1/tasks/housekeeping")
+                        .with(jwt().authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_Manager"))
+                                .jwt(j -> j.subject(managerId.toString()).claim("role", "Manager").claim("departmentId", departmentId.toString()).claim("departmentCode", "HOUSEKEEPING")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Housekeeping workflow requires start, completion and Manager inspection approval")
+    void housekeepingLifecycle_Approval() throws Exception {
+        UUID roomId=UUID.randomUUID(); HousekeepingTask task=HousekeepingTask.builder().title("Turnover 301").requiredRole(TaskRole.Housekeeper).status(TaskStatus.Assigned).assignedEmployeeId(staffId).departmentId(departmentId).roomId(roomId).build(); HousekeepingTask saved=staffTaskRepository.save(task);
+        var housekeeper=jwt().authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_Housekeeper")).jwt(j->j.subject(staffId.toString()).claim("role","Housekeeper").claim("departmentId",departmentId.toString()).claim("departmentCode","HOUSEKEEPING"));
+        mockMvc.perform(post("/api/v1/tasks/"+saved.getId()+"/accept").with(housekeeper)).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("Accepted"));
+        mockMvc.perform(post("/api/v1/tasks/"+saved.getId()+"/start-cleaning").header("Authorization","Test test-token").with(housekeeper)).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("InProgress"));
+        mockMvc.perform(post("/api/v1/tasks/"+saved.getId()+"/complete").with(housekeeper)).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("AwaitingInspection"));
+        String decision="{\"approved\":true,\"notes\":\"Room inspected and ready\"}";
+        mockMvc.perform(post("/api/v1/tasks/"+saved.getId()+"/inspection").header("Authorization","Test manager-token").with(jwt().authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_Manager")).jwt(j->j.subject(managerId.toString()).claim("role","Manager").claim("departmentId",departmentId.toString()).claim("departmentCode","HOUSEKEEPING"))).contentType(MediaType.APPLICATION_JSON).content(decision)).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("InspectionApproved")).andExpect(jsonPath("$.inspectionPassed").value(true));
+        verify(roomReadinessClient).start(eq(roomId),eq(saved.getId()),any(),eq(departmentId),eq(staffId),any(),eq("Test test-token"));
+        verify(roomReadinessClient).inspect(eq(roomId),eq(saved.getId()),any(),eq(departmentId),eq(managerId),eq(true),anyString(),any(),eq("Test manager-token"));
+    }
+
+    @Test
+    void crossDepartmentManagerCannotApproveInspection() throws Exception {
+        HousekeepingTask task=HousekeepingTask.builder().title("Turnover 302").requiredRole(TaskRole.Housekeeper).status(TaskStatus.AwaitingInspection).assignedEmployeeId(staffId).departmentId(departmentId).roomId(UUID.randomUUID()).build(); HousekeepingTask saved=staffTaskRepository.save(task);
+        mockMvc.perform(post("/api/v1/tasks/"+saved.getId()+"/inspection").header("Authorization","Test bad-token").with(jwt().authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_Manager")).jwt(j->j.subject(UUID.randomUUID().toString()).claim("role","Manager").claim("departmentId",UUID.randomUUID().toString()).claim("departmentCode","FINANCE"))).contentType(MediaType.APPLICATION_JSON).content("{\"approved\":true,\"notes\":\"invalid\"}" )).andExpect(status().isForbidden());
+        verifyNoInteractions(roomReadinessClient);
     }
 }

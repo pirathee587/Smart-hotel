@@ -16,6 +16,7 @@ public record BookingDto
     public DateOnly CheckOutDate { get; init; }
     public int GuestCount { get; init; }
     public decimal TotalAmount { get; init; }
+    public string? Currency { get; init; }
     public BookingStatus Status { get; init; }
     public string? PaymentReference { get; init; }
     public string? PayHereOrderId { get; init; }

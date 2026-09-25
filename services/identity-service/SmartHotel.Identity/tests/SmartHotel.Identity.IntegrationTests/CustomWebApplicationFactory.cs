@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SmartHotel.Identity.Application.Interfaces;
@@ -12,10 +14,19 @@ namespace SmartHotel.Identity.IntegrationTests;
 
 public class CustomWebApplicationFactory : WebApplicationFactory<Program>
 {
+    private readonly InMemoryDatabaseRoot _root = new();
     private readonly string _dbName = "IntegrationTestDb_" + Guid.NewGuid();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        builder.ConfigureAppConfiguration((_, config) =>
+        {
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["DatabaseProvider"] = "inmemory"
+            });
+        });
+
         builder.ConfigureServices(services =>
         {
             // Remove existing DbContext registration
@@ -28,7 +39,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
             // Register in-memory DbContext
             services.AddDbContext<AppDbContext>(options =>
             {
-                options.UseInMemoryDatabase(_dbName);
+                options.UseInMemoryDatabase(_dbName, _root);
             });
 
             // Ensure database is created and seeded
@@ -53,6 +64,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 IsActive = true,
                 EmailVerified = true,
                 MustChangePassword = true,
+                DepartmentId = Guid.Parse("22222222-2222-2222-2222-222222222221"),
                 PreferredLanguage = "en"
             };
             db.Employees.Add(mustChangeEmp);

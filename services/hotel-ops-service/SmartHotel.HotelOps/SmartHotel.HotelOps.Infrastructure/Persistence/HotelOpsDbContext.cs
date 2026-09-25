@@ -14,6 +14,9 @@ public class HotelOpsDbContext : DbContext, IHotelOpsDbContext
     public DbSet<RoomTypeImage> RoomTypeImages => Set<RoomTypeImage>();
     public DbSet<Room> Rooms => Set<Room>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+    public DbSet<HousekeepingReadiness> HousekeepingReadinessRecords => Set<HousekeepingReadiness>();
+    public DbSet<OperationalEventReceipt> OperationalEventReceipts => Set<OperationalEventReceipt>();
+    public DbSet<MaintenanceRestriction> MaintenanceRestrictions => Set<MaintenanceRestriction>();
 
     public HotelOpsDbContext(DbContextOptions<HotelOpsDbContext> options) : base(options)
     {
@@ -31,6 +34,7 @@ public class HotelOpsDbContext : DbContext, IHotelOpsDbContext
             entity.Property(h => h.Address).HasMaxLength(500);
             entity.Property(h => h.Phone).HasMaxLength(50);
             entity.Property(h => h.Email).HasMaxLength(150);
+            entity.Property(h => h.BaseCurrency).IsRequired().HasMaxLength(3).HasDefaultValue("LKR");
         });
 
         // Department
@@ -121,6 +125,29 @@ public class HotelOpsDbContext : DbContext, IHotelOpsDbContext
             entity.Property(o => o.Type).IsRequired().HasMaxLength(100);
             entity.Property(o => o.Content).IsRequired();
             entity.HasIndex(o => o.ProcessedOnUtc);
+        });
+
+        modelBuilder.Entity<HousekeepingReadiness>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.TaskId).IsUnique();
+            entity.HasIndex(x => new { x.RoomId, x.Status });
+            entity.Property(x => x.InspectionNotes).HasMaxLength(1000);
+            entity.Property(x => x.ReadinessGate).HasMaxLength(120);
+        });
+
+        modelBuilder.Entity<OperationalEventReceipt>(entity =>
+        {
+            entity.HasKey(x => x.EventId);
+            entity.HasIndex(x => new { x.TaskId, x.EventType });
+            entity.HasIndex(x => x.ProcessedAtUtc);
+            entity.Property(x => x.EventType).IsRequired().HasMaxLength(80);
+        });
+        modelBuilder.Entity<MaintenanceRestriction>(entity =>
+        {
+            entity.HasKey(x=>x.Id); entity.HasIndex(x=>x.WorkOrderId).IsUnique();
+            entity.HasIndex(x=>new{x.RoomId,x.Status}); entity.Property(x=>x.Status).HasConversion<string>().HasMaxLength(20);
+            entity.Property(x=>x.Issue).HasMaxLength(2000).IsRequired(); entity.Property(x=>x.Severity).HasMaxLength(20);
         });
     }
 }

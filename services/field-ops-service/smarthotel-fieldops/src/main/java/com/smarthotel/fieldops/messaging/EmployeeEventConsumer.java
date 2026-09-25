@@ -44,6 +44,12 @@ public class EmployeeEventConsumer {
             EmployeeProfile profile = employeeProfileRepository.findById(employeeId)
                     .orElse(EmployeeProfile.builder().employeeId(employeeId).build());
 
+            String departmentId = root.hasNonNull("DepartmentId") ? root.get("DepartmentId").asText() :
+                    (root.hasNonNull("departmentId") ? root.get("departmentId").asText() : null);
+            if (departmentId != null && !departmentId.isBlank()) {
+                profile.setDepartmentId(UUID.fromString(departmentId));
+            }
+
             if (root.hasNonNull("FullName")) {
                 profile.setFullName(root.get("FullName").asText());
             } else if (root.hasNonNull("fullName")) {

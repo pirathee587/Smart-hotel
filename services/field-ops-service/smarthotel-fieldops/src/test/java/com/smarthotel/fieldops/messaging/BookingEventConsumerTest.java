@@ -40,19 +40,21 @@ class BookingEventConsumerTest {
     @DisplayName("Booking checkout event triggers automatic Turnover HousekeepingTask creation")
     void handleBookingCheckedOut_CreatesTurnoverTask() {
         UUID roomId = UUID.randomUUID();
+        UUID departmentId = UUID.randomUUID();
         String json = """
             {
                 "BookingId": "a1b2c3d4-e5f6-7890-1234-56789abcdef0",
                 "BookingReference": "TH-2026-XYZ123",
                 "RoomId": "%s",
+                "DepartmentId": "%s",
                 "CheckedOutAt": "2026-09-06T11:00:00Z"
             }
-        """.formatted(roomId);
+        """.formatted(roomId, departmentId);
 
         consumer.handleBookingCheckedOut(json);
 
         ArgumentCaptor<HousekeepingTask> taskCaptor = ArgumentCaptor.forClass(HousekeepingTask.class);
-        verify(taskService).createHousekeepingTask(taskCaptor.capture(), eq(true));
+        verify(taskService).createTurnoverTask(taskCaptor.capture(), eq(UUID.fromString("a1b2c3d4-e5f6-7890-1234-56789abcdef0")), eq(true));
 
         HousekeepingTask task = taskCaptor.getValue();
         assertThat(task.getTitle()).contains("Turnover Cleaning - TH-2026-XYZ123");
@@ -60,5 +62,6 @@ class BookingEventConsumerTest {
         assertThat(task.getPriority()).isEqualTo(TaskPriority.High);
         assertThat(task.getRequiredRole()).isEqualTo(TaskRole.Housekeeper);
         assertThat(task.getRoomId()).isEqualTo(roomId);
+        assertThat(task.getDepartmentId()).isEqualTo(UUID.fromString("22222222-2222-2222-2222-222222222222"));
     }
 }

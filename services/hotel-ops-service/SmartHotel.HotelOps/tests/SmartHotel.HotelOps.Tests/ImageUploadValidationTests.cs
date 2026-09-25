@@ -8,16 +8,28 @@ using Xunit;
 
 namespace SmartHotel.HotelOps.Tests;
 
+using SmartHotel.HotelOps.Application.Features.Images.DTOs;
+
 public class TestImageStorageService : IImageStorageService
 {
-    public Task<string> UploadImageAsync(Stream fileStream, string fileName, string contentType, CancellationToken ct = default)
+    public Task<string> UploadImageAsync(Stream fileStream, string fileName, string contentType, string folder = "rooms", CancellationToken ct = default)
     {
-        return Task.FromResult($"https://storage.smarthotel.lk/images/{fileName}");
+        return Task.FromResult($"https://storage.smarthotel.lk/images/{folder}/{fileName}");
+    }
+
+    public Task<IEnumerable<StorageFileDto>> ListImagesAsync(string folder = "rooms", CancellationToken ct = default)
+    {
+        return Task.FromResult<IEnumerable<StorageFileDto>>(new List<StorageFileDto>());
     }
 
     public Task DeleteImageAsync(string imageUrl, CancellationToken ct = default)
     {
         return Task.CompletedTask;
+    }
+
+    public string GetPublicUrl(string storagePath)
+    {
+        return $"https://storage.smarthotel.lk/images/{storagePath.TrimStart('/')}";
     }
 }
 

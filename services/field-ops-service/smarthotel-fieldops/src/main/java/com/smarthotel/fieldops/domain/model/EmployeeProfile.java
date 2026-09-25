@@ -23,6 +23,8 @@ public class EmployeeProfile {
     @Column(nullable = false)
     private String fullName;
 
+    private UUID departmentId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private TaskRole role;

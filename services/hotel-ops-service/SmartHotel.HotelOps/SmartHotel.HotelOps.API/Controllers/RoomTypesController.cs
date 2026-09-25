@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using SmartHotel.HotelOps.Application.Features.RoomTypes.Commands;
 using SmartHotel.HotelOps.Application.Features.RoomTypes.DTOs;
 using SmartHotel.HotelOps.Application.Features.RoomTypes.Queries;
+using SmartHotel.Authorization;
 
 namespace SmartHotel.HotelOps.API.Controllers;
 
@@ -64,7 +65,7 @@ public class RoomTypesController : ControllerBase
     /// Create a new draft room type (Admin only).
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = HotelPolicies.FrontOfficeManagement)]
     [ProducesResponseType(typeof(RoomTypeDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -83,7 +84,7 @@ public class RoomTypesController : ControllerBase
     /// Update existing room type (Admin only).
     /// </summary>
     [HttpPut("{id:guid}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = HotelPolicies.FrontOfficeManagement)]
     [ProducesResponseType(typeof(RoomTypeDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
@@ -105,7 +106,7 @@ public class RoomTypesController : ControllerBase
     /// Publish draft room type to make it visible to customers (Admin only).
     /// </summary>
     [HttpPost("{id:guid}/publish")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = HotelPolicies.FrontOfficeManagement)]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> PublishRoomType(Guid id, CancellationToken ct)

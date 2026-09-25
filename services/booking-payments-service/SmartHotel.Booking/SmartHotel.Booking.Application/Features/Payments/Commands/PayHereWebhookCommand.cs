@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -15,7 +16,9 @@ public class PayHereWebhookCommandHandler : IRequestHandler<PayHereWebhookComman
     private readonly IBookingDbContext _context;
     private readonly IPayHereService _payHereService;
 
-    public PayHereWebhookCommandHandler(IBookingDbContext context, IPayHereService payHereService)
+    public PayHereWebhookCommandHandler(
+        IBookingDbContext context,
+        IPayHereService payHereService)
     {
         _context = context;
         _payHereService = payHereService;
@@ -31,6 +34,9 @@ public class PayHereWebhookCommandHandler : IRequestHandler<PayHereWebhookComman
             return Result<string>.Failure("Invalid PayHere signature.");
         }
 
+        await using var transaction = await _context.BeginBookingTransactionAsync(ct);
+        using var paymentLock = await _context.AcquirePaymentLockAsync(payload.OrderId, ct);
+
         // 2. Find Payment
         var payment = await _context.Payments
             .FirstOrDefaultAsync(p => p.PayHereOrderId == payload.OrderId, ct);
@@ -44,7 +50,54 @@ public class PayHereWebhookCommandHandler : IRequestHandler<PayHereWebhookComman
             return Result<string>.Failure($"Neither payment nor booking found for order reference {payload.OrderId}.");
         }
 
-        // 4. Process based on status_code
+        // 4. Validate Provider Amount and Currency against server-side authoritative state
+        if (!decimal.TryParse(payload.PayHereAmount, NumberStyles.Number, CultureInfo.InvariantCulture, out var providerAmount))
+        {
+            return Result<string>.Failure("Invalid provider amount format.");
+        }
+
+        string? authoritativeBookingCurrency = null;
+
+        if (payment is not null)
+        {
+            if (providerAmount != payment.Amount)
+            {
+                return Result<string>.Failure("Provider amount does not match the recorded payment.");
+            }
+
+            if (!string.Equals(payload.PayHereCurrency, payment.Currency, StringComparison.OrdinalIgnoreCase))
+            {
+                return Result<string>.Failure("Provider currency does not match the recorded payment.");
+            }
+
+            var reusedProviderReference = await _context.Payments.AsNoTracking().AnyAsync(
+                p => p.Id != payment.Id && p.PayHerePaymentId == payload.PaymentId, ct);
+            if (reusedProviderReference)
+            {
+                return Result<string>.Failure("Provider payment reference has already been used.");
+            }
+        }
+        else if (booking is not null)
+        {
+            if (providerAmount != booking.TotalAmount)
+            {
+                return Result<string>.Failure("Provider amount does not match the booking total amount.");
+            }
+
+            if (string.IsNullOrWhiteSpace(booking.Currency))
+            {
+                return Result<string>.Failure("Authoritative booking currency cannot be established: Booking does not persist a Currency field.");
+            }
+
+            if (!string.Equals(payload.PayHereCurrency, booking.Currency, StringComparison.OrdinalIgnoreCase))
+            {
+                return Result<string>.Failure("Provider currency does not match the authoritative booking currency.");
+            }
+
+            authoritativeBookingCurrency = booking.Currency;
+        }
+
+        // 5. Process based on status_code
         // Status Codes: 2 = Success, 0 = Pending, -1 = Canceled, -2 = Failed, -3 = Chargedback
         if (payload.StatusCode == 2)
         {
@@ -56,6 +109,9 @@ public class PayHereWebhookCommandHandler : IRequestHandler<PayHereWebhookComman
             if (booking != null && booking.Status == BookingStatus.PendingPayment)
             {
                 booking.ConfirmPayment(payload.PaymentId, payload.OrderId);
+
+                var authoritativeAmount = payment?.Amount ?? booking.TotalAmount;
+                var authoritativeCurrency = payment?.Currency ?? authoritativeBookingCurrency!;
 
                 // Add Outbox event for booking confirmation
                 _context.OutboxMessages.Add(new OutboxMessage
@@ -72,7 +128,7 @@ public class PayHereWebhookCommandHandler : IRequestHandler<PayHereWebhookComman
                         RoomTypeId = booking.RoomTypeId,
                         CheckInDate = booking.CheckInDate,
                         CheckOutDate = booking.CheckOutDate,
-                        TotalAmount = booking.TotalAmount,
+                        TotalAmount = authoritativeAmount,
                         PaymentId = payload.PaymentId,
                         ConfirmedAt = DateTime.UtcNow
                     })
@@ -87,8 +143,8 @@ public class PayHereWebhookCommandHandler : IRequestHandler<PayHereWebhookComman
                         PaymentId = payment?.Id ?? Guid.NewGuid(),
                         BookingId = booking.Id,
                         BookingReference = booking.BookingReference,
-                        Amount = decimal.TryParse(payload.PayHereAmount, out var amt) ? amt : booking.TotalAmount,
-                        Currency = payload.PayHereCurrency,
+                        Amount = authoritativeAmount,
+                        Currency = authoritativeCurrency,
                         PayHerePaymentId = payload.PaymentId,
                         CompletedAt = DateTime.UtcNow
                     })
@@ -96,6 +152,7 @@ public class PayHereWebhookCommandHandler : IRequestHandler<PayHereWebhookComman
             }
 
             await _context.SaveChangesAsync(ct);
+            if (transaction is not null) await transaction.CommitAsync(ct);
             return Result<string>.Success(payload.PaymentId, "Payment confirmed successfully.");
         }
         else if (payload.StatusCode < 0)
@@ -106,6 +163,7 @@ public class PayHereWebhookCommandHandler : IRequestHandler<PayHereWebhookComman
             }
 
             await _context.SaveChangesAsync(ct);
+            if (transaction is not null) await transaction.CommitAsync(ct);
             return Result<string>.Success(payload.OrderId, $"Payment marked as failed/cancelled with status code {payload.StatusCode}.");
         }
 

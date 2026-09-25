@@ -1,7 +1,9 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SmartHotel.Authorization;
 using SmartHotel.HotelOps.Application.Features.Images.Commands;
+using SmartHotel.HotelOps.Application.Features.Images.Queries;
 using SmartHotel.HotelOps.Application.Features.RoomTypes.DTOs;
 
 namespace SmartHotel.HotelOps.API.Controllers;
@@ -19,11 +21,28 @@ public class RoomTypeImagesController : ControllerBase
     }
 
     /// <summary>
+    /// Get all images for a RoomType (Public access).
+    /// </summary>
+    [HttpGet]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(List<RoomTypeImageDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetImages(Guid roomTypeId, CancellationToken ct = default)
+    {
+        var result = await _mediator.Send(new GetRoomTypeImagesQuery(roomTypeId), ct);
+        if (!result.Succeeded)
+        {
+            return NotFound(new { message = result.Message });
+        }
+        return Ok(result.Data);
+    }
+
+    /// <summary>
     /// Upload an image for a RoomType (Admin only).
     /// Enforces 5MB max file size and JPEG, PNG, WebP format validation.
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = HotelPolicies.FrontOfficeManagement)]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(RoomTypeImageDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
@@ -31,7 +50,7 @@ public class RoomTypeImagesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> UploadImage(
         Guid roomTypeId,
-        [FromForm] IFormFile file,
+        IFormFile file,
         [FromQuery] bool isPrimary = false,
         CancellationToken ct = default)
     {
@@ -62,7 +81,7 @@ public class RoomTypeImagesController : ControllerBase
     /// Delete an image from a RoomType (Admin only).
     /// </summary>
     [HttpDelete("{imageId:guid}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = HotelPolicies.FrontOfficeManagement)]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteImage(Guid roomTypeId, Guid imageId, CancellationToken ct)
@@ -79,7 +98,7 @@ public class RoomTypeImagesController : ControllerBase
     /// Reorder images for a RoomType (Admin only).
     /// </summary>
     [HttpPut("reorder")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = HotelPolicies.FrontOfficeManagement)]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ReorderImages(Guid roomTypeId, [FromBody] List<Guid> imageIds, CancellationToken ct)

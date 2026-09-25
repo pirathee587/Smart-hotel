@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: smarthotel-staging
+resources:
+  - ../../base
+patches:
+  - target: {kind: Namespace, name: smarthotel}
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: smarthotel-staging
+  - target: {kind: Ingress, name: smarthotel}
+    patch: |-
+      - op: add
+        path: /metadata/annotations/alb.ingress.kubernetes.io~1certificate-arn
+        value: REPLACE_WITH_STAGING_ACM_CERTIFICATE_ARN
+      - op: replace
+        path: /spec/rules/0/host
+        value: REPLACE_WITH_STAGING_DNS_NAME

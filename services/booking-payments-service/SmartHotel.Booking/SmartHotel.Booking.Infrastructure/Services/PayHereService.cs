@@ -16,8 +16,10 @@ public class PayHereService : IPayHereService
     public PayHereService(IConfiguration configuration, ILogger<PayHereService> logger)
     {
         _logger = logger;
-        _merchantId = configuration["PAYHERE_MERCHANT_ID"] ?? configuration["PayHere:MerchantId"] ?? "1220001";
-        _merchantSecret = configuration["PAYHERE_MERCHANT_SECRET"] ?? configuration["PayHere:MerchantSecret"] ?? "smarthotel_secret_sandbox_key_2026";
+        _merchantId = configuration["PAYHERE_MERCHANT_ID"] ?? configuration["PayHere:MerchantId"] ?? "";
+        _merchantSecret = configuration["PAYHERE_MERCHANT_SECRET"] ?? configuration["PayHere:MerchantSecret"] ?? "";
+        if (string.IsNullOrWhiteSpace(_merchantId) || string.IsNullOrWhiteSpace(_merchantSecret))
+            throw new InvalidOperationException("PayHere credentials must be supplied through secure configuration.");
         var isSandbox = bool.TryParse(configuration["PAYHERE_IS_SANDBOX"] ?? configuration["PayHere:IsSandbox"], out var sandbox) ? sandbox : true;
         _checkoutUrl = isSandbox ? "https://sandbox.payhere.lk/pay/checkout" : "https://www.payhere.lk/pay/checkout";
     }
@@ -64,11 +66,13 @@ public class PayHereService : IPayHereService
         var rawString = $"{payload.MerchantId}{payload.OrderId}{payload.PayHereAmount}{payload.PayHereCurrency}{payload.StatusCode}{secretHash}";
         var calculatedSig = ComputeMd5(rawString);
 
-        var isValid = string.Equals(calculatedSig, payload.Md5Sig, StringComparison.OrdinalIgnoreCase);
+        if (!string.Equals(payload.MerchantId, _merchantId, StringComparison.Ordinal)) return false;
+        var expected = Encoding.ASCII.GetBytes(calculatedSig);
+        var received = Encoding.ASCII.GetBytes(payload.Md5Sig?.ToUpperInvariant() ?? "");
+        var isValid = expected.Length == received.Length && CryptographicOperations.FixedTimeEquals(expected, received);
         if (!isValid)
         {
-            _logger.LogWarning("PayHere signature mismatch! Received: {Received}, Calculated: {Calculated} for Order: {Order}",
-                payload.Md5Sig, calculatedSig, payload.OrderId);
+            _logger.LogWarning("PayHere signature mismatch for order {Order}", payload.OrderId);
         }
 
         return isValid;

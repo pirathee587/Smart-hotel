@@ -1,0 +1,92 @@
+fail: Microsoft.EntityFrameworkCore.Database.Command[20102]
+      Failed executing DbCommand (113ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      CREATE TABLE identity."ApprovalRequests" (
+          "Id" uuid NOT NULL,
+          "Type" character varying(100) NOT NULL,
+          "Description" character varying(1000) NOT NULL,
+          "RequestedBy" character varying(200) NOT NULL,
+          "Status" character varying(30) NOT NULL,
+          "CreatedAtUtc" timestamp with time zone NOT NULL,
+          "UpdatedAtUtc" timestamp with time zone,
+          CONSTRAINT "PK_ApprovalRequests" PRIMARY KEY ("Id")
+      );
+info: Program[0]
+      CreateTablesAsync info (tables may already exist): 42P07: relation "ApprovalRequests" already exists
+info: Program[0]
+      Ensured 'Role' column exists on identity.Customers.
+info: Program[0]
+      Ensured approval workflow and MustChangePassword columns exist on identity.Employees.
+warn: Program[0]
+      Existing employees without a department were backfilled to 'Unassigned — migration review required'; review that department in the dashboard.
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:5001
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Development
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: C:\Users\Piratheepan\Desktop\Project1\services\identity-service\SmartHotel.Identity\SmartHotel.Identity.API
+info: SmartHotel.Identity.Infrastructure.Services.RsaKeyManager[0]
+      Loading existing RSA key pair from keys/identity_rsa.pem
+info: SmartHotel.Identity.Infrastructure.Services.SmtpEmailService[0]
+      [SMTP] Email 'Welcome to SmartHotel — Your Login Credentials' successfully sent to pjonline.cslab@gmail.com via smtp.gmail.com:587
+fail: Microsoft.EntityFrameworkCore.Database.Command[20102]
+      Failed executing DbCommand (133ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      CREATE TABLE identity."ApprovalRequests" (
+          "Id" uuid NOT NULL,
+          "Type" character varying(100) NOT NULL,
+          "Description" character varying(1000) NOT NULL,
+          "RequestedBy" character varying(200) NOT NULL,
+          "Status" character varying(30) NOT NULL,
+          "CreatedAtUtc" timestamp with time zone NOT NULL,
+          "UpdatedAtUtc" timestamp with time zone,
+          CONSTRAINT "PK_ApprovalRequests" PRIMARY KEY ("Id")
+      );
+info: Program[0]
+      CreateTablesAsync info (tables may already exist): 42P07: relation "ApprovalRequests" already exists
+info: Program[0]
+      Ensured 'Role' column exists on identity.Customers.
+info: Program[0]
+      Ensured approval workflow and MustChangePassword columns exist on identity.Employees.
+warn: Program[0]
+      Existing employees without a department were backfilled to 'Unassigned — migration review required'; review that department in the dashboard.
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:5001
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Development
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: C:\Users\Piratheepan\Desktop\Project1\services\identity-service\SmartHotel.Identity\SmartHotel.Identity.API
+info: SmartHotel.Identity.Infrastructure.Services.RsaKeyManager[0]
+      Loading existing RSA key pair from keys/identity_rsa.pem
+fail: Microsoft.EntityFrameworkCore.Database.Command[20102]
+      Failed executing DbCommand (129ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      CREATE TABLE identity."ApprovalRequests" (
+          "Id" uuid NOT NULL,
+          "Type" character varying(100) NOT NULL,
+          "Description" character varying(1000) NOT NULL,
+          "RequestedBy" character varying(200) NOT NULL,
+          "Status" character varying(30) NOT NULL,
+          "CreatedAtUtc" timestamp with time zone NOT NULL,
+          "UpdatedAtUtc" timestamp with time zone,
+          CONSTRAINT "PK_ApprovalRequests" PRIMARY KEY ("Id")
+      );
+info: Program[0]
+      CreateTablesAsync info (tables may already exist): 42P07: relation "ApprovalRequests" already exists
+info: Program[0]
+      Ensured 'Role' column exists on identity.Customers.
+info: Program[0]
+      Ensured approval workflow and MustChangePassword columns exist on identity.Employees.
+warn: Program[0]
+      Existing employees without a department were backfilled to 'Unassigned — migration review required'; review that department in the dashboard.
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:5001
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Development
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: C:\Users\Piratheepan\Desktop\Project1\services\identity-service\SmartHotel.Identity\SmartHotel.Identity.API
+info: SmartHotel.Identity.Infrastructure.Services.RsaKeyManager[0]
+      Loading existing RSA key pair from keys/identity_rsa.pem

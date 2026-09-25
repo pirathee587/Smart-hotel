@@ -105,7 +105,7 @@ public class KioskSelfServiceTests
         context.Bookings.Add(booking);
         await context.SaveChangesAsync();
 
-        var handler = new KioskCheckInCommandHandler(context);
+        var handler = new KioskCheckInCommandHandler(context,Ready(booking.RoomId));
         var command = new KioskCheckInCommand("TH-2026-KIOSK3", "Wickramasinghe");
 
         var result = await handler.Handle(command, CancellationToken.None);
@@ -145,7 +145,7 @@ public class KioskSelfServiceTests
         context.Bookings.Add(booking);
         await context.SaveChangesAsync();
 
-        var handler = new KioskCheckInCommandHandler(context);
+        var handler = new KioskCheckInCommandHandler(context,Ready(booking.RoomId));
         var command = new KioskCheckInCommand("TH-2026-KIOSK4", "Wickramasinghe");
 
         var result = await handler.Handle(command, CancellationToken.None);
@@ -193,4 +193,6 @@ public class KioskSelfServiceTests
         outbox.Should().NotBeNull();
         outbox!.Content.Should().Contain("Kiosk");
     }
+
+    private static FakeHotelOpsClient Ready(Guid roomId)=>new(){Readiness=new(roomId,"Available",false,true,"InspectionApproved",true,null)};
 }

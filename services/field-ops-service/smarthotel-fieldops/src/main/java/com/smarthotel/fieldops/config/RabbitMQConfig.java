@@ -23,6 +23,12 @@ public class RabbitMQConfig {
     @Value("${rabbitmq.routing-key.employee-sync:employee.*}")
     private String employeeSyncRoutingKey;
 
+    @Value("${rabbitmq.queue.concierge-task:smarthotel.fieldops.task-requested}")
+    private String conciergeTaskQueue;
+
+    @Value("${rabbitmq.routing-key.concierge-task:task.requested}")
+    private String conciergeTaskRoutingKey;
+
     @Bean
     public TopicExchange eventsExchange() {
         return new TopicExchange(eventsExchange, true, false);
@@ -50,5 +56,17 @@ public class RabbitMQConfig {
         return BindingBuilder.bind(employeeSyncQueue)
                 .to(eventsExchange)
                 .with(employeeSyncRoutingKey);
+    }
+
+    @Bean
+    public Queue conciergeTaskQueue() {
+        return QueueBuilder.durable(conciergeTaskQueue).build();
+    }
+
+    @Bean
+    public Binding conciergeTaskBinding(Queue conciergeTaskQueue, TopicExchange eventsExchange) {
+        return BindingBuilder.bind(conciergeTaskQueue)
+                .to(eventsExchange)
+                .with(conciergeTaskRoutingKey);
     }
 }

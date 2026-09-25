@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import type { RequestStatusUpdate } from '@/types/chat'
 import * as signalR from '@microsoft/signalr'
-import type { ActiveRequestDto, RequestStatusUpdate } from '@/types/chat'
+import { useCallback,useEffect,useRef,useState } from 'react'
 
 const HUB_URL = `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000'}/hubs/smarthotel`
 

@@ -66,6 +66,7 @@ public class JwtTokenServiceTests
         jwt.Claims.Should().Contain(c => c.Type == "role" && c.Value == "Manager");
         jwt.Claims.Should().Contain(c => c.Type == "departmentId" && c.Value == deptId.ToString());
         jwt.Claims.Should().NotContain(c => c.Type == "must_change_password");
+        (jwt.ValidTo - jwt.ValidFrom).Should().BeCloseTo(TimeSpan.FromMinutes(60), TimeSpan.FromSeconds(1));
     }
 
     [Fact]
@@ -91,6 +92,7 @@ public class JwtTokenServiceTests
         jwt.Header.Alg.Should().Be("RS256");
         jwt.Claims.Should().Contain(c => c.Type == "must_change_password" && c.Value == "true");
         jwt.Claims.Should().Contain(c => c.Type == "scope" && c.Value == "change_password");
+        (jwt.ValidTo - jwt.ValidFrom).Should().BeCloseTo(TimeSpan.FromMinutes(15), TimeSpan.FromSeconds(1));
     }
 
     [Fact]

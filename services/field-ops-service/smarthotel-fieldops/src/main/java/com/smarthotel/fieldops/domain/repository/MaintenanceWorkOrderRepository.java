@@ -7,8 +7,10 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.Optional;
 
 @Repository
 public interface MaintenanceWorkOrderRepository extends JpaRepository<MaintenanceWorkOrder, UUID> {
     List<MaintenanceWorkOrder> findByStatus(TaskStatus status);
+    Optional<MaintenanceWorkOrder> findByIssueEventId(UUID issueEventId);
 }

@@ -40,6 +40,9 @@ public static class DependencyInjection
         // Identity Service Client (Scaffolded Manager validation)
         services.AddScoped<IIdentityServiceClient, IdentityServiceClient>();
 
+        // Booking Availability Client (HTTP calls to booking-payments-service)
+        services.AddHttpClient<IBookingAvailabilityClient, BookingAvailabilityClient>();
+
         // Background Services (Outbox Publisher & RabbitMQ Checkout Consumer)
         services.AddHostedService<OutboxPublisherService>();
         services.AddHostedService<BookingCheckedOutConsumerService>();

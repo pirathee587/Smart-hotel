@@ -35,6 +35,11 @@ public class GetRoomTypesQueryHandler : IRequestHandler<GetRoomTypesQuery, Resul
 
         var list = await query.OrderBy(r => r.PricePerNight).ToListAsync(ct);
 
+        var hotelIds = list.Select(r => r.HotelId).Distinct().ToList();
+        var hotelCurrencies = await _context.Hotels
+            .Where(h => hotelIds.Contains(h.Id))
+            .ToDictionaryAsync(h => h.Id, h => h.BaseCurrency, ct);
+
         var dtos = list.Select(r => new RoomTypeDto
         {
             Id = r.Id,
@@ -47,6 +52,7 @@ public class GetRoomTypesQueryHandler : IRequestHandler<GetRoomTypesQuery, Resul
             PricePerNight = r.PricePerNight,
             CleaningFee = r.CleaningFee,
             AmenitiesFee = r.AmenitiesFee,
+            Currency = hotelCurrencies.TryGetValue(r.HotelId, out var cur) ? cur : "LKR",
             LongDescription = r.LongDescription,
             Highlights = r.Highlights,
             Amenities = r.Amenities,

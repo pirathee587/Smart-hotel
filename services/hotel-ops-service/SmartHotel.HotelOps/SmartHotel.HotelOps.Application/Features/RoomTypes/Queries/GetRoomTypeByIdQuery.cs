@@ -34,6 +34,11 @@ public class GetRoomTypeByIdQueryHandler : IRequestHandler<GetRoomTypeByIdQuery,
             return Result<RoomTypeDto>.Failure($"Room type with ID {request.Id} is not published.");
         }
 
+        var hotelCurrency = await _context.Hotels
+            .Where(h => h.Id == roomType.HotelId)
+            .Select(h => h.BaseCurrency)
+            .FirstOrDefaultAsync(ct) ?? "LKR";
+
         var dto = new RoomTypeDto
         {
             Id = roomType.Id,
@@ -46,6 +51,7 @@ public class GetRoomTypeByIdQueryHandler : IRequestHandler<GetRoomTypeByIdQuery,
             PricePerNight = roomType.PricePerNight,
             CleaningFee = roomType.CleaningFee,
             AmenitiesFee = roomType.AmenitiesFee,
+            Currency = hotelCurrency,
             LongDescription = roomType.LongDescription,
             Highlights = roomType.Highlights,
             Amenities = roomType.Amenities,

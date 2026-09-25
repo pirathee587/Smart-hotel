@@ -13,13 +13,22 @@ public enum PaymentStatus
 {
     Created = 0,
     Completed = 1,
+    // Completed is retained for legacy captured payments. Only a provider that
+    // advertises escrow support may move a payment to FundsHeld.
+    FundsHeld = 4,
+    ReleasePending = 5,
+    Released = 6,
+    Settled = 7,
+    RefundPending = 8,
+    PartiallyRefunded = 9,
     Refunded = 2,
     Failed = 3
 }
 
 public enum PaymentProvider
 {
-    PayHere = 1
+    PayHere = 1,
+    Escrow = 2
 }
 
 public enum ComplaintSeverity

@@ -60,7 +60,8 @@ public class UploadRoomTypeImageCommandHandler : IRequestHandler<UploadRoomTypeI
             command.FileStream,
             command.FileName,
             command.ContentType,
-            ct);
+            folder: "rooms",
+            ct: ct);
 
         var existingImagesCount = roomType.Images.Count;
         var isPrimary = command.IsPrimary || existingImagesCount == 0;

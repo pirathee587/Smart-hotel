@@ -20,6 +20,7 @@
     <ProjectReference Include="..\SmartHotel.Identity.Application\SmartHotel.Identity.Application.csproj" />
     <ProjectReference Include="..\SmartHotel.Identity.Infrastructure\SmartHotel.Identity.Infrastructure.csproj" />
     <ProjectReference Include="..\SmartHotel.Identity.Grpc\SmartHotel.Identity.Grpc.csproj" />
+    <ProjectReference Include="..\..\..\..\shared\SmartHotel.Authorization\SmartHotel.Authorization.csproj" />
   </ItemGroup>
 
 </Project>

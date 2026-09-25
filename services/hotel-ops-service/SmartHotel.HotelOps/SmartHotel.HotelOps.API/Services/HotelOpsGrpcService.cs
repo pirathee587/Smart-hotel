@@ -44,7 +44,8 @@ public class HotelOpsGrpcService : HotelOpsGrpc.HotelOpsGrpcBase
             Capacity = data.Capacity,
             PricePerNight = (double)data.PricePerNight,
             CleaningFee = (double)data.CleaningFee,
-            AmenitiesFee = (double)data.AmenitiesFee
+            AmenitiesFee = (double)data.AmenitiesFee,
+            Currency = data.Currency
         };
     }
 }

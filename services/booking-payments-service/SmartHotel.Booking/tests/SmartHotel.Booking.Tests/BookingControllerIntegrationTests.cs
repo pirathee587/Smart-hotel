@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using SmartHotel.Booking.API.Controllers;
 using SmartHotel.Booking.Application.Features.Kiosk.DTOs;
 using SmartHotel.Booking.Application.Features.Reviews.DTOs;
@@ -23,6 +24,12 @@ public class BookingApiFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
+        builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["PAYHERE_MERCHANT_ID"] = "test-merchant",
+            ["PAYHERE_MERCHANT_SECRET"] = "test-secret-not-production",
+            ["PAYHERE_IS_SANDBOX"] = "true"
+        }));
         builder.ConfigureServices(services =>
         {
             // Remove real DbContext registration and use dedicated InMemory database for integration test
@@ -36,6 +43,13 @@ public class BookingApiFactory : WebApplicationFactory<Program>
             {
                 options.UseInMemoryDatabase(_dbName);
             });
+
+            var hotelOpsDescriptor = services.SingleOrDefault(d => d.ServiceType == typeof(Application.Interfaces.IHotelOpsClient));
+            if (hotelOpsDescriptor != null)
+            {
+                services.Remove(hotelOpsDescriptor);
+            }
+            services.AddScoped<Application.Interfaces.IHotelOpsClient>(_ => new FakeHotelOpsClient { AutoReady = true });
         });
     }
 }
@@ -145,8 +159,9 @@ public class BookingControllerIntegrationTests : IClassFixture<BookingApiFactory
         }
 
         // Prepare PayHere webhook payload with valid signature
-        const string merchantId = "1220001";
-        const string merchantSecret = "smarthotel_secret_sandbox_key_2026";
+        var config = _factory.Services.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>();
+        var merchantId = config["PAYHERE_MERCHANT_ID"]!;
+        var merchantSecret = config["PAYHERE_MERCHANT_SECRET"]!;
         const string amount = "50000.00";
         const string currency = "LKR";
         const int statusCode = 2; // Success

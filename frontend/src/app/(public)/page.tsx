@@ -1,8 +1,38 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
+import React,{ useEffect,useRef,useState } from "react";
+
+import { RoomGuestConfig } from "@/components/landing/GuestRoomPicker";
+import { CoverflowCarousel } from "@/components/ui/coverflow-carousel";
+import { Map,MapMarker,MarkerContent,MarkerTooltip } from "@/components/ui/mapcn-marker-content";
+import { ReviewSection } from "@/components/ui/review-section";
+import { useAuthStore } from "@/features/auth/store/useAuthStore";
+import GuestSettingsSheet from "@/features/settings/components/GuestSettingsSheet";
+import {
+ArrowRight,
+Bot,
+Calendar as CalendarIcon,
+ChevronDown,
+ChevronLeft,
+ChevronRight,
+Flame,
+Globe,
+Key,
+Layers,
+Mail,
+MapPin,
+Menu,
+Navigation,
+Phone,
+Plus,
+Search,
+ShieldCheck,
+Utensils,
+X
+} from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 
 const NAV_ITEMS = [
   { label: "Residences", href: "#residences" },
@@ -11,32 +41,6 @@ const NAV_ITEMS = [
   { label: "The Ridge", href: "#ridge" },
   { label: "Contact", href: "#contact" },
 ];
-import {
-  Menu,
-  X,
-  Plus,
-  ArrowRight,
-  ChevronLeft,
-  ChevronRight,
-  Check,
-  Calendar as CalendarIcon,
-  Users as UsersIcon,
-  Sparkles,
-  MapPin,
-  Compass,
-  Phone,
-  Mail,
-  Flame,
-  Key,
-  Utensils,
-  Bot,
-  Layers,
-  Globe,
-  Navigation
-} from "lucide-react";
-import { Map, MapMarker, MarkerContent, MarkerTooltip, MarkerLabel } from "@/components/ui/mapcn-marker-content";
-import { CoverflowCarousel } from "@/components/ui/coverflow-carousel";
-import { ReviewSection } from "@/components/ui/review-section";
 
 // Suite types definition
 interface Suite {
@@ -93,8 +97,17 @@ const SUITES: Suite[] = [
 ];
 
 export default function SmartHotelLandingPage() {
+  const { isAuthenticated, user, logout, initialize } = useAuthStore();
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
+
   // Active navigation section state
-  const [activeSection, setActiveSection] = useState<string>("");
+  const [activeSection, setActiveSection] = useState<string>(() =>
+    typeof window === "undefined" ? "" : window.location.hash,
+  );
 
   // Mobile navigation drawer state
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -132,13 +145,6 @@ export default function SmartHotelLandingPage() {
     };
 
     window.addEventListener("scroll", handleScroll, { passive: true });
-    
-    // Initial check on load/hash
-    if (window.location.hash) {
-      setActiveSection(window.location.hash);
-    } else {
-      handleScroll();
-    }
 
     return () => {
       window.removeEventListener("scroll", handleScroll);
@@ -226,11 +232,34 @@ export default function SmartHotelLandingPage() {
   ];
 
   // Booking Form State
-  const [checkIn, setCheckIn] = useState("2026-09-15");
-  const [checkOut, setCheckOut] = useState("2026-09-17");
-  const [guests, setGuests] = useState("2 Adults, 0 Children");
-  const [selectedSuiteId, setSelectedSuiteId] = useState("master-slowhouse");
-  const [bookingFeedback, setBookingFeedback] = useState<string | null>(null);
+  const [isBookingBarOpen, setIsBookingBarOpen] = useState(false);
+  const [activePopup, setActivePopup] = useState<"property" | "dates" | "guests" | null>(null);
+  const [selectedProperty, setSelectedProperty] = useState("SmartHotel Maskeliya - Signature Sel");
+  const [promoCode, setPromoCode] = useState("");
+  const [checkIn, setCheckIn] = useState("2026-09-12");
+  const [checkOut, setCheckOut] = useState("2026-09-13");
+  const [roomConfigs, setRoomConfigs] = useState<RoomGuestConfig[]>([
+    { adults: 2, children: 0 }
+  ]);
+
+  const formatDateRange = (inDate: string, outDate: string) => {
+    try {
+      const d1 = new Date(inDate);
+      const d2 = new Date(outDate);
+      const m1 = d1.toLocaleDateString("en-US", { day: "2-digit", month: "short" });
+      const m2 = d2.toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" });
+      return `${m1} - ${m2}`;
+    } catch {
+      return `${inDate} - ${outDate}`;
+    }
+  };
+
+  const formatRoomsAndGuests = () => {
+    const roomCount = String(roomConfigs.length).padStart(2, "0");
+    const adultCount = String(totalAdults).padStart(2, "0");
+    const childText = totalChildren > 0 ? `, ${String(totalChildren).padStart(2, "0")} Children` : "";
+    return `${roomCount} Room${roomConfigs.length > 1 ? "s" : ""}, ${adultCount} Adult${totalAdults > 1 ? "s" : ""}${childText}`;
+  };
 
   // Maskeliya geographic hotspots for MapLibre
   const maskeliyaHotspots = [
@@ -302,21 +331,33 @@ export default function SmartHotelLandingPage() {
   };
 
   const nights = calculateNights();
-  const selectedSuite = SUITES.find((s) => s.id === selectedSuiteId) || SUITES[2];
-  const estimatedTotal = selectedSuite.price * nights;
+  const totalAdults = roomConfigs.reduce((sum, r) => sum + r.adults, 0);
+  const totalChildren = roomConfigs.reduce((sum, r) => sum + r.children, 0);
+  const totalGuests = totalAdults + totalChildren;
+
+  const router = useRouter();
 
   const handleBookingSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setBookingFeedback(
-      `Availability confirmed for ${selectedSuite.name} (${nights} nights, $${estimatedTotal} total). Redirecting to secure guest setup...`
-    );
-    setTimeout(() => {
-      window.location.href = `/portal/access?suite=${selectedSuite.id}&in=${checkIn}&out=${checkOut}&nights=${nights}`;
-    }, 1800);
+    // Navigate to rooms listing page with search parameters
+    const params = new URLSearchParams({
+      checkIn,
+      checkOut,
+      guests: totalGuests.toString(),
+      rooms: roomConfigs.length.toString(),
+    });
+    if (promoCode.trim()) {
+      params.append("promo", promoCode.trim());
+    }
+    router.push(`/rooms?${params.toString()}`);
   };
+
 
   return (
     <div className="min-h-screen bg-[#F6F1E6] text-[#3A362E] font-sans antialiased selection:bg-[#C4622D] selection:text-white">
+      {/* ─────────────────────────────────────────────────────────────
+          1. HEADER (Fixed/Sticky, transparent over hero)
+      ───────────────────────────────────────────────────────────── */}
       {/* ─────────────────────────────────────────────────────────────
           1. HEADER (Fixed/Sticky, transparent over hero)
       ───────────────────────────────────────────────────────────── */}
@@ -325,7 +366,7 @@ export default function SmartHotelLandingPage() {
         role="banner"
       >
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          {/* Wordmark */}
+          {/* Wordmark (Matches 1st upload: Smart in white serif, Hotel in orange italic) */}
           <Link
             href="/"
             className="group flex items-baseline gap-1 text-white focus-visible:ring-2 focus-visible:ring-[#C4622D] focus-visible:outline-none rounded-sm"
@@ -334,45 +375,51 @@ export default function SmartHotelLandingPage() {
             <span className="font-serif italic text-2xl tracking-tight text-[#E07A3E]">Hotel</span>
           </Link>
 
-          {/* Desktop Nav Links */}
-          <nav
-            className="hidden md:flex items-center space-x-8 text-sm tracking-wide"
-            aria-label="Main Navigation"
-          >
-            {NAV_ITEMS.map((item) => {
-              const isActive = activeSection === item.href;
-              return (
-                <a
-                  key={item.href}
-                  href={item.href}
-                  onClick={(e) => handleNavClick(e, item.href)}
-                  className={`relative py-1 transition-all duration-200 focus-visible:ring-2 focus-visible:ring-[#C4622D] focus-visible:outline-none ${
-                    isActive
-                      ? "text-white font-semibold"
-                      : "text-[#EEE7D6]/80 font-medium hover:text-white"
-                  }`}
-                >
-                  {item.label}
-                  {isActive && (
-                    <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#C4622D] transition-all duration-300" />
-                  )}
-                </a>
-              );
-            })}
-          </nav>
-
           {/* Header Right Actions */}
-          <div className="flex items-center gap-4">
-            {/* Pill Button: Book a Stay */}
-            <Link
-              href="/login"
-              className="group inline-flex items-center gap-2.5 bg-[#F6F1E6] hover:bg-white text-[#0F1B1A] font-medium text-xs tracking-wider uppercase pl-5 pr-2 py-2 rounded-full transition-all duration-200 shadow-md hover:shadow-lg focus-visible:ring-2 focus-visible:ring-[#C4622D] focus-visible:outline-none cursor-pointer"
+          <div className="flex items-center gap-2.5 sm:gap-4">
+            {/* Staff Login / Active Employee Badge */}
+            {isAuthenticated ? (
+              <div className="flex items-center bg-[#16302C]/80 border border-[#2F5C52]/60 rounded-full px-3 py-1.5 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="text-xs text-[#EEE7D6] hover:text-[#E07A3E] font-semibold tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors"
+                  title="Open Account Settings"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#E07A3E]" />
+                  <span>{user?.name?.split(" ")[0] || "PIRATHEEPAN"}</span>
+                </button>
+              </div>
+            ) : (
+              <Link
+                href="/staff/login"
+                id="staff-login-button"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 text-xs font-medium tracking-wide text-[#EEE7D6] hover:text-[#E07A3E] bg-[#16302C]/80 hover:bg-[#16302C] border border-[#2F5C52]/60 hover:border-[#E07A3E] rounded-full transition-all duration-200 focus-visible:ring-2 focus-visible:ring-[#C4622D] focus-visible:outline-none cursor-pointer group shadow-sm"
+                title="Staff Portal Login"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-[#E07A3E] group-hover:scale-110 transition-transform" />
+                <span>Staff Login</span>
+              </Link>
+            )}
+
+            {/* Pill Button: BOOK A STAY with (+) circular badge */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsBookingBarOpen((prev) => !prev);
+                setActivePopup(null);
+              }}
+              className="group inline-flex items-center gap-2.5 bg-[#F6F1E6] hover:bg-white text-[#0F1B1A] font-medium text-xs tracking-wider uppercase pl-4 sm:pl-5 pr-2 py-1.5 sm:py-2 rounded-full transition-all duration-200 shadow-md hover:shadow-lg focus-visible:ring-2 focus-visible:ring-[#C4622D] focus-visible:outline-none cursor-pointer"
             >
-              <span>Book a Stay</span>
-              <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[#C4622D] text-white transition-transform duration-200 group-hover:scale-110">
-                <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>BOOK A STAY</span>
+              <span className="flex items-center justify-center w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-[#C4622D] text-white transition-transform duration-200 group-hover:scale-110">
+                {isBookingBarOpen ? (
+                  <X className="w-3 h-3 sm:w-3.5 sm:h-3.5 stroke-[2.5]" />
+                ) : (
+                  <Plus className="w-3 h-3 sm:w-3.5 sm:h-3.5 stroke-[2.5]" />
+                )}
               </span>
-            </Link>
+            </button>
 
             {/* Mobile Hamburger Button */}
             <button
@@ -389,7 +436,7 @@ export default function SmartHotelLandingPage() {
 
         {/* Mobile Navigation Drawer */}
         {mobileNavOpen && (
-          <div className="md:hidden bg-[#0F1B1A] border-b border-[#2F5C52]/40 px-6 py-6 space-y-4 animate-in fade-in duration-200">
+          <div className="bg-[#0F1B1A] border-b border-[#2F5C52]/40 px-6 py-6 space-y-4 animate-in fade-in duration-200">
             <nav className="flex flex-col space-y-3 text-base text-[#EEE7D6]">
               {NAV_ITEMS.map((item) => {
                 const isActive = activeSection === item.href;
@@ -401,32 +448,62 @@ export default function SmartHotelLandingPage() {
                       handleNavClick(e, item.href);
                       setMobileNavOpen(false);
                     }}
-                    className={`py-2 transition-colors flex items-center justify-between ${
-                      isActive
+                    className={`py-2 transition-colors flex items-center justify-between ${isActive
                         ? "text-[#E07A3E] font-semibold"
                         : "hover:text-[#E07A3E]"
-                    }`}
+                      }`}
                   >
                     <span>{item.label}</span>
                     {isActive && <span className="w-2 h-2 rounded-full bg-[#C4622D]" />}
                   </a>
                 );
               })}
-              <div className="pt-3 border-t border-[#16302C] flex flex-col gap-2">
-                <Link
-                  href="/portal/access"
-                  onClick={() => setMobileNavOpen(false)}
-                  className="text-xs text-[#7C9188] hover:text-white py-1"
+              <div className="pt-3 border-t border-[#16302C] flex flex-col gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileNavOpen(false);
+                    setIsBookingBarOpen(true);
+                  }}
+                  className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#E07A3E] hover:text-white py-1 text-left cursor-pointer"
                 >
-                  Guest Access Portal →
-                </Link>
-                <Link
-                  href="/login"
-                  onClick={() => setMobileNavOpen(false)}
-                  className="text-xs text-[#7C9188] hover:text-white py-1"
-                >
-                  Staff Sign In →
-                </Link>
+                  <CalendarIcon className="w-4 h-4" />
+                  <span>Book Now →</span>
+                </button>
+                {isAuthenticated ? (
+                  <div className="flex items-center justify-between text-xs text-[#EEE7D6] py-1 border-t border-[#16302C]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSettingsOpen(true);
+                        setMobileNavOpen(false);
+                      }}
+                      className="flex items-center gap-1.5 hover:text-[#E07A3E] text-left"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5 text-[#E07A3E]" />
+                      <span>{user?.name || "Guest Account"} (Settings)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        logout();
+                        setMobileNavOpen(false);
+                      }}
+                      className="text-[#E07A3E] underline text-[11px] cursor-pointer"
+                    >
+                      Logout
+                    </button>
+                  </div>
+                ) : (
+                  <Link
+                    href="/staff/login"
+                    onClick={() => setMobileNavOpen(false)}
+                    className="inline-flex items-center gap-1.5 text-xs text-[#E07A3E] hover:text-white py-1 font-medium"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-[#E07A3E]" />
+                    <span>Staff Login →</span>
+                  </Link>
+                )}
               </div>
             </nav>
           </div>
@@ -438,11 +515,11 @@ export default function SmartHotelLandingPage() {
       ───────────────────────────────────────────────────────────── */}
       <section
         id="book"
-        className="relative min-h-[780px] lg:min-h-[860px] w-full flex flex-col justify-between overflow-hidden bg-[#0F1B1A] pt-28 pb-8 md:pb-12 scroll-mt-20"
+        className="relative z-30 min-h-[640px] lg:min-h-[720px] w-full flex flex-col justify-center bg-[#0F1B1A] pt-28 pb-16 scroll-mt-20"
         aria-label="Welcome to SmartHotel Maskeliya"
       >
         {/* Full-bleed background photo */}
-        <div className="absolute inset-0 z-0">
+        <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
           {/* TODO: replace with client photo */}
           <Image
             src="/images/hero-view.jpg"
@@ -484,7 +561,7 @@ export default function SmartHotelLandingPage() {
             </p>
 
             {/* Quick Action Badges */}
-            <div className="flex flex-wrap items-center gap-3 pt-1">
+            <div className="flex flex-wrap items-center gap-3 pt-2">
               <a
                 href="#residences"
                 className="group inline-flex items-center gap-2.5 bg-[#F6F1E6]/90 hover:bg-white text-[#0F1B1A] font-medium text-xs tracking-wider uppercase pl-4 pr-2 py-2 rounded-full transition-all duration-200 shadow-lg backdrop-blur-sm focus-visible:ring-2 focus-visible:ring-[#C4622D] focus-visible:outline-none"
@@ -494,141 +571,25 @@ export default function SmartHotelLandingPage() {
                   <Plus className="w-3 h-3 stroke-[2.5]" />
                 </span>
               </a>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsBookingBarOpen(true);
+                  setActivePopup(null);
+                }}
+                className="group inline-flex items-center gap-2.5 bg-[#F6F1E6] hover:bg-white text-[#0F1B1A] font-medium text-xs tracking-wider uppercase pl-4 sm:pl-5 pr-2 py-2 rounded-full transition-all duration-200 shadow-lg focus-visible:ring-2 focus-visible:ring-[#C4622D] focus-visible:outline-none cursor-pointer"
+              >
+                <span>Book a Stay</span>
+                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#C4622D] text-white transition-transform duration-200 group-hover:scale-110">
+                  <Plus className="w-3 h-3 stroke-[2.5]" />
+                </span>
+              </button>
+
               <span className="hidden sm:inline-block text-xs text-[#EEE7D6]/60">
                 • Spring-fed thermal pools &amp; private tea ridges
               </span>
             </div>
-          </div>
-        </div>
-
-        {/* Hero Bottom Docked Luxury Booking Bar (Senior UI/UX Floating Treatment) */}
-        <div className="relative z-20 w-full max-w-7xl mx-auto px-6 md:px-12 mt-auto">
-          <div className="bg-[#0F1B1A]/92 backdrop-blur-xl border border-[#2F5C52]/40 shadow-2xl p-5 md:p-6 text-[#F6F1E6]">
-            {/* Sub-header inside bar */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 pb-3.5 mb-4 border-b border-[#16302C]/90 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#E07A3E] animate-pulse" />
-                <span className="text-[11px] uppercase tracking-widest text-[#E07A3E] font-medium">
-                  Direct Reservation Sanctuary
-                </span>
-              </div>
-              <div className="text-[11px] text-[#7C9188] flex items-center gap-2">
-                <span>Best Rate Guarantee</span>
-                <span>•</span>
-                <span>Private Airport Transfer Included</span>
-              </div>
-            </div>
-
-            {/* 5-Column Booking Form */}
-            <form
-              onSubmit={handleBookingSubmit}
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-0 items-center"
-            >
-              {/* Field 1: Check-in */}
-              <div className="lg:pr-4 lg:border-r lg:border-[#16302C] space-y-1">
-                <label
-                  htmlFor="hero-checkin"
-                  className="text-[11px] text-[#7C9188] uppercase tracking-wider font-medium flex items-center gap-1.5"
-                >
-                  <CalendarIcon className="w-3.5 h-3.5 text-[#C4622D]" />
-                  Check-in
-                </label>
-                <input
-                  id="hero-checkin"
-                  type="date"
-                  value={checkIn}
-                  onChange={(e) => setCheckIn(e.target.value)}
-                  className="w-full bg-[#16302C]/80 border border-[#2F5C52]/50 text-sm text-[#F6F1E6] px-3 py-2 focus:outline-none focus:border-[#C4622D] rounded-none cursor-pointer"
-                  required
-                />
-                <p className="text-[10px] text-[#7C9188]">Min. 2-night stay</p>
-              </div>
-
-              {/* Field 2: Check-out */}
-              <div className="lg:px-4 lg:border-r lg:border-[#16302C] space-y-1">
-                <label
-                  htmlFor="hero-checkout"
-                  className="text-[11px] text-[#7C9188] uppercase tracking-wider font-medium flex items-center gap-1.5"
-                >
-                  <CalendarIcon className="w-3.5 h-3.5 text-[#C4622D]" />
-                  Check-out
-                </label>
-                <input
-                  id="hero-checkout"
-                  type="date"
-                  value={checkOut}
-                  onChange={(e) => setCheckOut(e.target.value)}
-                  className="w-full bg-[#16302C]/80 border border-[#2F5C52]/50 text-sm text-[#F6F1E6] px-3 py-2 focus:outline-none focus:border-[#C4622D] rounded-none cursor-pointer"
-                  required
-                />
-                <p className="text-[10px] text-[#E07A3E] font-medium">{nights} nights selected</p>
-              </div>
-
-              {/* Field 3: Guests */}
-              <div className="lg:px-4 lg:border-r lg:border-[#16302C] space-y-1">
-                <label
-                  htmlFor="hero-guests"
-                  className="text-[11px] text-[#7C9188] uppercase tracking-wider font-medium flex items-center gap-1.5"
-                >
-                  <UsersIcon className="w-3.5 h-3.5 text-[#C4622D]" />
-                  Guests
-                </label>
-                <select
-                  id="hero-guests"
-                  value={guests}
-                  onChange={(e) => setGuests(e.target.value)}
-                  className="w-full bg-[#16302C]/80 border border-[#2F5C52]/50 text-sm text-[#F6F1E6] px-3 py-2 focus:outline-none focus:border-[#C4622D] rounded-none cursor-pointer"
-                >
-                  <option value="1 Adult, 0 Children">1 Adult</option>
-                  <option value="2 Adults, 0 Children">2 Adults</option>
-                  <option value="2 Adults, 1 Child">2 Adults, 1 Child</option>
-                  <option value="4 Adults, 0 Children">4 Adults (Villa)</option>
-                </select>
-                <p className="text-[10px] text-[#7C9188]">Adults &amp; guests</p>
-              </div>
-
-              {/* Field 4: Residence Type */}
-              <div className="lg:px-4 lg:border-r lg:border-[#16302C] space-y-1">
-                <label
-                  htmlFor="hero-residence-type"
-                  className="text-[11px] text-[#7C9188] uppercase tracking-wider font-medium flex items-center gap-1.5"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-[#C4622D]" />
-                  Residence Type
-                </label>
-                <select
-                  id="hero-residence-type"
-                  value={selectedSuiteId}
-                  onChange={(e) => setSelectedSuiteId(e.target.value)}
-                  className="w-full bg-[#16302C]/80 border border-[#2F5C52]/50 text-sm text-[#F6F1E6] px-3 py-2 focus:outline-none focus:border-[#C4622D] rounded-none cursor-pointer"
-                >
-                  {SUITES.map((suite) => (
-                    <option key={suite.id} value={suite.id}>
-                      {suite.name} (${suite.price}/nt)
-                    </option>
-                  ))}
-                </select>
-                <p className="text-[10px] text-[#E07A3E] font-medium">Est. ${estimatedTotal} total</p>
-              </div>
-
-              {/* Field 5: Action Button */}
-              <div className="lg:pl-4 flex flex-col justify-end pt-1 lg:pt-0">
-                <button
-                  type="submit"
-                  className="w-full bg-[#C4622D] hover:bg-[#E07A3E] text-white font-medium text-xs tracking-wider uppercase py-3.5 px-5 rounded-full transition-all duration-200 shadow-md hover:shadow-lg focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none cursor-pointer flex items-center justify-center gap-2 group/btn"
-                >
-                  <span>Check Availability</span>
-                  <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover/btn:translate-x-1" />
-                </button>
-              </div>
-            </form>
-
-            {bookingFeedback && (
-              <div className="mt-3 p-2.5 bg-[#16302C] border border-[#C4622D] text-xs text-[#F6F1E6] flex items-center gap-2 animate-in fade-in">
-                <Check className="w-4 h-4 text-[#E07A3E] shrink-0" />
-                <span>{bookingFeedback}</span>
-              </div>
-            )}
           </div>
         </div>
       </section>
@@ -637,7 +598,7 @@ export default function SmartHotelLandingPage() {
           3. TORN-EDGE TRANSITION (Signature SVG Watercolor filter)
       ───────────────────────────────────────────────────────────── */}
       <div
-        className="relative w-full overflow-hidden bg-[#0F1B1A] select-none pointer-events-none -mt-1"
+        className="relative z-10 w-full overflow-hidden bg-[#0F1B1A] select-none pointer-events-none -mt-1"
         aria-hidden="true"
       >
         <svg
@@ -667,6 +628,72 @@ export default function SmartHotelLandingPage() {
           />
         </svg>
       </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          PROPERTY HIGHLIGHTS (Cinnamon Luxury Editorial Showcase)
+      ───────────────────────────────────────────────────────────── */}
+      <section className="py-20 md:py-28 bg-[#F6F1E6] border-b border-[#E3D9C6]">
+        <div className="max-w-7xl mx-auto px-6 md:px-12 text-center">
+          <p className="text-[11px] font-semibold tracking-[0.3em] uppercase text-[#8C725E] mb-3">
+            SANCTUARY EXPERIENCES
+          </p>
+          <h2 className="font-serif text-3xl sm:text-4xl md:text-5xl font-normal tracking-wide uppercase text-[#1A1A1A] mb-5">
+            PROPERTY HIGHLIGHTS
+          </h2>
+          <p className="text-[#5A5248] text-base md:text-lg max-w-2xl mx-auto font-light leading-relaxed mb-14">
+            Take in the rhythm of the highlands, where design, landscape and experience come together to shape a stay that feels open, unhurried and deeply connected to Maskeliya.
+          </p>
+
+          {/* 2-Column Editorial Grid matching reference */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-left">
+            <div className="group relative overflow-hidden rounded-lg bg-black/5 shadow-md">
+              <div className="relative h-80 sm:h-96 w-full overflow-hidden">
+                <Image
+                  src="/images/slowhouse-interior.jpg"
+                  alt="Architecture and Slowhouse Living at SmartHotel Maskeliya"
+                  fill
+                  className="object-cover transition-transform duration-700 group-hover:scale-105"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
+                <div className="absolute bottom-6 left-6 right-6 text-white">
+                  <span className="text-[10px] uppercase tracking-[0.25em] text-[#E07A3E] font-medium block mb-1">
+                    Design &amp; Architecture
+                  </span>
+                  <h3 className="font-serif text-2xl font-normal">
+                    Highland Slowhouses &amp; Tea Ridge Architecture
+                  </h3>
+                  <p className="text-xs text-[#EEE7D6]/80 mt-1 line-clamp-2 font-light">
+                    Crafted from reclaimed timber and stone, immersed in morning mist and tea terraces.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="group relative overflow-hidden rounded-lg bg-black/5 shadow-md">
+              <div className="relative h-80 sm:h-96 w-full overflow-hidden">
+                <Image
+                  src="/images/pool-thumb.jpg"
+                  alt="Highland Geothermal Spring Pools"
+                  fill
+                  className="object-cover transition-transform duration-700 group-hover:scale-105"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
+                <div className="absolute bottom-6 left-6 right-6 text-white">
+                  <span className="text-[10px] uppercase tracking-[0.25em] text-[#E07A3E] font-medium block mb-1">
+                    Hydrothermal Wellness
+                  </span>
+                  <h3 className="font-serif text-2xl font-normal">
+                    Thermal Spring Pools &amp; Nordic Saunas
+                  </h3>
+                  <p className="text-xs text-[#EEE7D6]/80 mt-1 line-clamp-2 font-light">
+                    Spring-fed warmth, private cantilevered plunges, and panoramic views of Adam&apos;s Peak.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* ─────────────────────────────────────────────────────────────
           4. DISCOVER / MAP SECTION (Doubles as Location)
@@ -729,11 +756,10 @@ export default function SmartHotelLandingPage() {
                     <button
                       type="button"
                       onClick={() => setMapViewMode("interactive")}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
-                        mapViewMode === "interactive"
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${mapViewMode === "interactive"
                           ? "bg-[#0F1B1A] text-[#F6F1E6] shadow-sm"
                           : "text-[#3A362E]/70 hover:text-[#0F1B1A]"
-                      }`}
+                        }`}
                     >
                       <Globe className="w-3.5 h-3.5 text-[#C4622D]" />
                       <span>Interactive Highlands Map</span>
@@ -741,11 +767,10 @@ export default function SmartHotelLandingPage() {
                     <button
                       type="button"
                       onClick={() => setMapViewMode("illustrated")}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
-                        mapViewMode === "illustrated"
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${mapViewMode === "illustrated"
                           ? "bg-[#0F1B1A] text-[#F6F1E6] shadow-sm"
                           : "text-[#3A362E]/70 hover:text-[#0F1B1A]"
-                      }`}
+                        }`}
                     >
                       <Layers className="w-3.5 h-3.5 text-[#C4622D]" />
                       <span>Illustrated Reserve Plan</span>
@@ -962,22 +987,20 @@ export default function SmartHotelLandingPage() {
                   <button
                     type="button"
                     onClick={() => setResidenceViewMode("coverflow")}
-                    className={`px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 cursor-pointer ${
-                      residenceViewMode === "coverflow"
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 cursor-pointer ${residenceViewMode === "coverflow"
                         ? "bg-[#0F1B1A] text-[#F6F1E6] shadow-sm"
                         : "text-[#3A362E]/70 hover:text-[#0F1B1A]"
-                    }`}
+                      }`}
                   >
                     3D Perspective
                   </button>
                   <button
                     type="button"
                     onClick={() => setResidenceViewMode("shelf")}
-                    className={`px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 cursor-pointer ${
-                      residenceViewMode === "shelf"
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 cursor-pointer ${residenceViewMode === "shelf"
                         ? "bg-[#0F1B1A] text-[#F6F1E6] shadow-sm"
                         : "text-[#3A362E]/70 hover:text-[#0F1B1A]"
-                    }`}
+                      }`}
                   >
                     Card Shelf
                   </button>
@@ -1023,15 +1046,6 @@ export default function SmartHotelLandingPage() {
                 depth={0.65}
                 className="py-4"
               />
-              <div className="text-center pt-4">
-                <a
-                  href="#book"
-                  className="inline-flex items-center gap-2 bg-[#C4622D] hover:bg-[#E07A3E] text-white px-6 py-2.5 rounded-full text-xs font-semibold tracking-wider uppercase shadow-md transition-all duration-200"
-                >
-                  <span>Reserve Selected Suite</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </a>
-              </div>
             </div>
           ) : (
             /* Horizontal Scroll-Snap Shelf */
@@ -1091,7 +1105,6 @@ export default function SmartHotelLandingPage() {
                   <div className="p-5 pt-0 border-t border-[#6B4A3A]/15 mt-4">
                     <a
                       href="#book"
-                      onClick={() => setSelectedSuiteId(suite.id)}
                       className="group/link inline-flex items-center gap-1.5 text-xs font-semibold text-[#0F1B1A] hover:text-[#C4622D] transition-colors pt-3"
                     >
                       <span>Reserve</span>
@@ -1362,18 +1375,18 @@ export default function SmartHotelLandingPage() {
               </h4>
               <ul className="space-y-2 text-xs text-[#7C9188]">
                 <li>
-                  <Link href="/portal/access" className="hover:text-white transition-colors">
+                  <Link href="/rooms" className="hover:text-white transition-colors">
                     Find My Stay
                   </Link>
                 </li>
                 <li>
-                  <Link href="/portal/access" className="hover:text-white transition-colors">
-                    Set Up Credentials
+                  <Link href="/login" className="hover:text-white transition-colors">
+                    Sign In Credentials
                   </Link>
                 </li>
                 <li>
-                  <Link href="/portal/access" className="hover:text-white transition-colors">
-                    Open AI Concierge
+                  <Link href="/rooms" className="hover:text-white transition-colors">
+                    Browse Rooms
                   </Link>
                 </li>
               </ul>
@@ -1386,17 +1399,23 @@ export default function SmartHotelLandingPage() {
               </h4>
               <ul className="space-y-2 text-xs text-[#7C9188]">
                 <li>
-                  <Link href="/register" className="hover:text-white transition-colors">
-                    Create Account
-                  </Link>
-                </li>
-                <li>
                   <Link href="/login" className="hover:text-white transition-colors">
-                    Sign In
+                    Guest Sign In
                   </Link>
                 </li>
                 <li>
-                  <Link href="/login" className="hover:text-[#E07A3E] transition-colors">
+                  <Link href="/staff/login" className="text-[#E07A3E] hover:underline transition-colors font-medium flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3" />
+                    <span>Staff &amp; Operations Portal</span>
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/login?mode=register" className="hover:text-white transition-colors">
+                    Create Guest Account
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/rooms" className="hover:text-[#E07A3E] transition-colors">
                     Book a Stay
                   </Link>
                 </li>
@@ -1410,17 +1429,17 @@ export default function SmartHotelLandingPage() {
               </h4>
               <ul className="space-y-2 text-xs text-[#7C9188]">
                 <li>
-                  <Link href="/pages#cancellation" className="hover:text-white transition-colors">
+                  <Link href="/#contact" className="hover:text-white transition-colors">
                     Cancellation Policy
                   </Link>
                 </li>
                 <li>
-                  <Link href="/pages#privacy" className="hover:text-white transition-colors">
+                  <Link href="/#contact" className="hover:text-white transition-colors">
                     Data Privacy &amp; GDPR
                   </Link>
                 </li>
                 <li>
-                  <Link href="/pages#terms" className="hover:text-white transition-colors">
+                  <Link href="/#contact" className="hover:text-white transition-colors">
                     Terms of Stay
                   </Link>
                 </li>
@@ -1437,6 +1456,309 @@ export default function SmartHotelLandingPage() {
           </div>
         </div>
       </footer>
+
+      {/* ─────────────────────────────────────────────────────────────
+          CINNAMON-STYLE FLOATING BOTTOM BOOKING BAR & DIM BACKDROP
+      ───────────────────────────────────────────────────────────── */}
+      {isBookingBarOpen && (
+        <>
+          {/* Dimmed background overlay matching Cinnamon reference screenshot */}
+          <div
+            className="fixed inset-0 bg-black/65 backdrop-blur-[2px] z-40 transition-opacity animate-in fade-in duration-300"
+            onClick={() => {
+              setIsBookingBarOpen(false);
+              setActivePopup(null);
+            }}
+            aria-hidden="true"
+          />
+
+          {/* Floating Bottom Bar (White + Bronze) - Elevated higher with increased size */}
+          <div className="fixed bottom-12 sm:bottom-18 md:bottom-24 lg:bottom-28 left-0 right-0 z-50 flex justify-center px-4 sm:px-8 animate-in slide-in-from-bottom-10 duration-300 pointer-events-auto">
+            <div className="relative w-full max-w-6xl xl:max-w-7xl bg-white text-gray-900 rounded-2xl sm:rounded-3xl shadow-[0_25px_70px_-15px_rgba(0,0,0,0.55)] border border-stone-200/90 flex flex-col md:flex-row items-stretch overflow-visible">
+              {/* Dismiss button on top-right */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsBookingBarOpen(false);
+                  setActivePopup(null);
+                }}
+                className="absolute -top-4 right-4 sm:right-6 z-10 bg-[#8C725E] hover:bg-[#78614E] text-white p-2 rounded-full shadow-xl transition-all hover:scale-110 cursor-pointer"
+                title="Close"
+                aria-label="Close booking bar"
+              >
+                <X className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+
+              {/* Segment 1: Destination / Sanctuary */}
+              <div className="relative flex-1 md:border-r border-b md:border-b-0 border-stone-200">
+                <div
+                  onClick={() => setActivePopup(activePopup === "property" ? null : "property")}
+                  className="px-6 sm:px-7 py-5 sm:py-6 flex items-center justify-between cursor-pointer hover:bg-stone-50/80 transition-colors h-full rounded-t-2xl md:rounded-tr-none md:rounded-l-3xl min-h-[68px] sm:min-h-[76px]"
+                >
+                  <span className="text-sm sm:text-base lg:text-lg font-medium text-gray-800 truncate">
+                    {selectedProperty}
+                  </span>
+                  <Search className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400 shrink-0 ml-3" />
+                </div>
+
+                {/* Property Popover */}
+                {activePopup === "property" && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute bottom-full mb-3 left-0 w-88 max-w-[90vw] bg-white border border-stone-200 rounded-2xl shadow-2xl p-4 text-gray-800 z-50 animate-in fade-in slide-in-from-bottom-2"
+                  >
+                    <div className="text-xs font-semibold tracking-wider uppercase text-[#8C725E] px-3 py-2 border-b border-stone-100 flex items-center justify-between">
+                      <span>Select Sanctuary</span>
+                      <button
+                        type="button"
+                        onClick={() => setActivePopup(null)}
+                        className="text-gray-400 hover:text-gray-600 cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="pt-2 space-y-1.5">
+                      {[
+                        "SmartHotel Maskeliya - Signature Sel",
+                        "Residence Quarter (Slowhouse Suites)",
+                        "Highland Geothermal & Wellness",
+                        "Canopy Old-Growth Forest Villas",
+                      ].map((item) => (
+                        <button
+                          key={item}
+                          type="button"
+                          onClick={() => {
+                            setSelectedProperty(item);
+                            setActivePopup(null);
+                          }}
+                          className={`w-full text-left px-3.5 py-2.5 text-xs sm:text-sm rounded-lg transition-colors cursor-pointer ${selectedProperty === item
+                              ? "bg-[#8C725E]/10 text-[#8C725E] font-semibold"
+                              : "text-gray-700 hover:bg-stone-50"
+                            }`}
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Segment 2: Dates (12 Sep - 13 Sep, 2026) */}
+              <div className="relative md:border-r border-b md:border-b-0 border-stone-200">
+                <div
+                  onClick={() => setActivePopup(activePopup === "dates" ? null : "dates")}
+                  className="px-6 sm:px-7 py-5 sm:py-6 flex items-center justify-between gap-3.5 cursor-pointer hover:bg-stone-50/80 transition-colors h-full whitespace-nowrap min-h-[68px] sm:min-h-[76px]"
+                >
+                  <span className="text-sm sm:text-base lg:text-lg font-medium text-gray-800">
+                    {formatDateRange(checkIn, checkOut)}
+                  </span>
+                  <ChevronDown className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400 shrink-0" />
+                </div>
+
+                {/* Dates Popover */}
+                {activePopup === "dates" && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 w-92 max-w-[90vw] bg-white border border-stone-200 rounded-2xl shadow-2xl p-5 text-gray-800 z-50 animate-in fade-in slide-in-from-bottom-2"
+                  >
+                    <div className="flex items-center justify-between pb-3 border-b border-stone-200 text-xs font-semibold tracking-wider uppercase text-[#8C725E]">
+                      <span>Stay Dates</span>
+                      <button
+                        type="button"
+                        onClick={() => setActivePopup(null)}
+                        className="text-gray-400 hover:text-gray-600 cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3.5 pt-3.5">
+                      <div>
+                        <label className="text-[11px] uppercase tracking-wider text-gray-500 font-medium block mb-1.5">
+                          Check-in
+                        </label>
+                        <input
+                          type="date"
+                          value={checkIn}
+                          onChange={(e) => setCheckIn(e.target.value)}
+                          className="w-full bg-stone-50 border border-stone-200 text-xs sm:text-sm text-gray-800 p-2.5 rounded-lg focus:outline-none focus:border-[#8C725E] cursor-pointer"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] uppercase tracking-wider text-gray-500 font-medium block mb-1.5">
+                          Check-out
+                        </label>
+                        <input
+                          type="date"
+                          value={checkOut}
+                          onChange={(e) => setCheckOut(e.target.value)}
+                          className="w-full bg-stone-50 border border-stone-200 text-xs sm:text-sm text-gray-800 p-2.5 rounded-lg focus:outline-none focus:border-[#8C725E] cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                    <div className="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between text-xs sm:text-sm">
+                      <span className="text-[#8C725E] font-medium">{nights} night{nights > 1 ? "s" : ""} selected</span>
+                      <button
+                        type="button"
+                        onClick={() => setActivePopup(null)}
+                        className="bg-[#8C725E] hover:bg-[#78614E] text-white text-xs sm:text-sm px-4 py-2 rounded-lg transition-colors cursor-pointer"
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Segment 3: Rooms & Guests (01 Room, 02 Adults) */}
+              <div className="relative md:border-r border-b md:border-b-0 border-stone-200">
+                <div
+                  onClick={() => setActivePopup(activePopup === "guests" ? null : "guests")}
+                  className="px-6 sm:px-7 py-5 sm:py-6 flex items-center justify-between gap-3.5 cursor-pointer hover:bg-stone-50/80 transition-colors h-full whitespace-nowrap min-h-[68px] sm:min-h-[76px]"
+                >
+                  <span className="text-sm sm:text-base lg:text-lg font-medium text-gray-800">
+                    {formatRoomsAndGuests()}
+                  </span>
+                  <ChevronDown className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400 shrink-0" />
+                </div>
+
+                {/* Rooms & Guests Popover */}
+                {activePopup === "guests" && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 w-92 max-w-[90vw] bg-white border border-stone-200 rounded-2xl shadow-2xl p-5 text-gray-800 z-50 animate-in fade-in slide-in-from-bottom-2"
+                  >
+                    <div className="flex items-center justify-between pb-3 border-b border-stone-200 text-xs font-semibold tracking-wider uppercase text-[#8C725E]">
+                      <span>Rooms &amp; Guests</span>
+                      <button
+                        type="button"
+                        onClick={() => setActivePopup(null)}
+                        className="text-gray-400 hover:text-gray-600 cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="py-3.5 space-y-3.5 max-h-64 overflow-y-auto">
+                      {roomConfigs.map((config, idx) => (
+                        <div key={idx} className="space-y-2.5 border-b border-stone-100 pb-3 last:border-0 last:pb-0">
+                          <div className="text-xs sm:text-sm font-semibold text-gray-700">Room {idx + 1}</div>
+                          <div className="flex items-center justify-between text-xs sm:text-sm text-gray-600">
+                            <span>Adults</span>
+                            <div className="flex items-center gap-2.5">
+                              <button
+                                type="button"
+                                disabled={config.adults <= 1}
+                                onClick={() => {
+                                  const next = [...roomConfigs];
+                                  next[idx].adults = Math.max(1, next[idx].adults - 1);
+                                  setRoomConfigs(next);
+                                }}
+                                className="w-7 h-7 rounded-md border border-stone-200 flex items-center justify-center hover:bg-stone-100 disabled:opacity-30 cursor-pointer font-medium"
+                              >
+                                -
+                              </button>
+                              <span className="w-5 text-center font-medium">{config.adults}</span>
+                              <button
+                                type="button"
+                                disabled={config.adults >= 4}
+                                onClick={() => {
+                                  const next = [...roomConfigs];
+                                  next[idx].adults = Math.min(4, next[idx].adults + 1);
+                                  setRoomConfigs(next);
+                                }}
+                                className="w-7 h-7 rounded-md border border-stone-200 flex items-center justify-center hover:bg-stone-100 disabled:opacity-30 cursor-pointer font-medium"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between text-xs sm:text-sm text-gray-600">
+                            <span>Children (0-12 yrs)</span>
+                            <div className="flex items-center gap-2.5">
+                              <button
+                                type="button"
+                                disabled={config.children <= 0}
+                                onClick={() => {
+                                  const next = [...roomConfigs];
+                                  next[idx].children = Math.max(0, next[idx].children - 1);
+                                  setRoomConfigs(next);
+                                }}
+                                className="w-7 h-7 rounded-md border border-stone-200 flex items-center justify-center hover:bg-stone-100 disabled:opacity-30 cursor-pointer font-medium"
+                              >
+                                -
+                              </button>
+                              <span className="w-5 text-center font-medium">{config.children}</span>
+                              <button
+                                type="button"
+                                disabled={config.children >= 3}
+                                onClick={() => {
+                                  const next = [...roomConfigs];
+                                  next[idx].children = Math.min(3, next[idx].children + 1);
+                                  setRoomConfigs(next);
+                                }}
+                                className="w-7 h-7 rounded-md border border-stone-200 flex items-center justify-center hover:bg-stone-100 disabled:opacity-30 cursor-pointer font-medium"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="pt-3 border-t border-stone-100 flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (roomConfigs.length < 3) {
+                            setRoomConfigs([...roomConfigs, { adults: 2, children: 0 }]);
+                          }
+                        }}
+                        disabled={roomConfigs.length >= 3}
+                        className="text-xs sm:text-sm text-[#8C725E] font-medium hover:underline disabled:opacity-40 cursor-pointer"
+                      >
+                        + Add Room
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActivePopup(null)}
+                        className="bg-[#8C725E] hover:bg-[#78614E] text-white text-xs sm:text-sm px-4 py-2 rounded-lg transition-colors cursor-pointer"
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Segment 4: Promo code */}
+              <div className="px-6 sm:px-7 py-5 sm:py-6 flex items-center md:border-r border-b md:border-b-0 border-stone-200 min-w-[160px] min-h-[68px] sm:min-h-[76px]">
+                <input
+                  type="text"
+                  placeholder="Promo code"
+                  value={promoCode}
+                  onChange={(e) => setPromoCode(e.target.value)}
+                  className="w-full text-sm sm:text-base lg:text-lg text-gray-800 placeholder-gray-400 focus:outline-none bg-transparent"
+                />
+              </div>
+
+              {/* Segment 5: BOOK NOW button */}
+              <button
+                type="button"
+                onClick={handleBookingSubmit}
+                className="bg-[#8C725E] hover:bg-[#78614E] text-white font-bold text-xs sm:text-sm md:text-base tracking-[0.16em] uppercase px-8 sm:px-12 md:px-14 py-5 sm:py-6 md:rounded-r-3xl transition-all hover:brightness-105 cursor-pointer whitespace-nowrap flex items-center justify-center min-h-[68px] sm:min-h-[76px]"
+              >
+                <span>BOOK NOW</span>
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Guest Sanctuary Settings Half-Page Drawer */}
+      <GuestSettingsSheet
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+      />
     </div>
   );
 }

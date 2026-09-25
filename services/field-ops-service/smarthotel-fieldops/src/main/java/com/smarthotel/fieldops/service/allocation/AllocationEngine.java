@@ -5,6 +5,7 @@ import com.smarthotel.fieldops.domain.model.StaffTask;
 import com.smarthotel.fieldops.domain.model.TaskAllocationLog;
 import com.smarthotel.fieldops.domain.model.enums.TaskEnums.TaskRole;
 import com.smarthotel.fieldops.domain.repository.EmployeeProfileRepository;
+import com.smarthotel.fieldops.domain.repository.AttendanceRecordRepository;
 import com.smarthotel.fieldops.domain.repository.StaffTaskRepository;
 import com.smarthotel.fieldops.domain.repository.TaskAllocationLogRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.Duration;
+import java.time.LocalDate;
 import java.util.*;
 
 @Service
@@ -28,6 +31,7 @@ public class AllocationEngine {
     private final EmployeeProfileRepository employeeProfileRepository;
     private final StaffTaskRepository staffTaskRepository;
     private final TaskAllocationLogRepository allocationLogRepository;
+    private final AttendanceRecordRepository attendanceRecordRepository;
 
     private final int maxConcurrentTasks;
     private final int maxDailyTasks;
@@ -36,11 +40,13 @@ public class AllocationEngine {
             EmployeeProfileRepository employeeProfileRepository,
             StaffTaskRepository staffTaskRepository,
             TaskAllocationLogRepository allocationLogRepository,
+            AttendanceRecordRepository attendanceRecordRepository,
             @Value("${allocation.max-concurrent-tasks:5}") int maxConcurrentTasks,
             @Value("${allocation.max-daily-tasks:10}") int maxDailyTasks) {
         this.employeeProfileRepository = employeeProfileRepository;
         this.staffTaskRepository = staffTaskRepository;
         this.allocationLogRepository = allocationLogRepository;
+        this.attendanceRecordRepository = attendanceRecordRepository;
         this.maxConcurrentTasks = maxConcurrentTasks > 0 ? maxConcurrentTasks : 5;
         this.maxDailyTasks = maxDailyTasks > 0 ? maxDailyTasks : 10;
     }
@@ -59,6 +65,12 @@ public class AllocationEngine {
             double proximityScore,
             double loadScore,
             double fairnessScore,
+            double attendanceScore,
+            double shiftAvailabilityScore,
+            double qualityScore,
+            double completionSpeedScore,
+            double guestRatingScore,
+            double rejectionScore,
             double totalScore) {}
 
     public double calculateTotalScore(double skill, double proximity, double load, double fairness) {
@@ -92,9 +104,54 @@ public class AllocationEngine {
         double fairnessRatio = (double) employee.getTasksCompletedToday() / this.maxDailyTasks;
         double fairnessScore = 1.0 - Math.min(fairnessRatio, 1.0);
 
-        double totalScore = calculateTotalScore(skillScore, proximityScore, loadScore, fairnessScore);
+        var recentAttendance = attendanceRecordRepository
+                .findByEmployeeIdAndDateBetweenOrderByDateAsc(employee.getEmployeeId(), LocalDate.now().minusDays(6), LocalDate.now());
+        double attendanceScore = recentAttendance.isEmpty() ? 0.5 : Math.min(1.0, recentAttendance.size() / 5.0);
+        double shiftAvailabilityScore = attendanceRecordRepository.findByEmployeeIdAndDate(employee.getEmployeeId(), LocalDate.now())
+                .map(record -> record.getClockOut() == null ? 1.0 : 0.0).orElse(0.5);
 
-        return new CandidateScore(employee, skillScore, proximityScore, loadScore, fairnessScore, totalScore);
+        List<StaffTask> history = staffTaskRepository.findByAssignedEmployeeId(employee.getEmployeeId());
+        List<StaffTask> finished = history.stream().filter(t -> t.getCompletedAt() != null).toList();
+        double qualityScore = history.isEmpty() ? 0.5 : Math.max(0.0, 1.0 - history.stream()
+                .filter(t -> t.getStatus() == com.smarthotel.fieldops.domain.model.enums.TaskEnums.TaskStatus.InspectionRejected)
+                .count() / (double) history.size());
+        double averageMinutes = finished.stream()
+                .filter(t -> t.getStartedAt() != null)
+                .mapToLong(t -> Duration.between(t.getStartedAt(), t.getCompletedAt()).toMinutes())
+                .filter(minutes -> minutes >= 0).average().orElse(45.0);
+        double completionSpeedScore = Math.max(0.0, Math.min(1.0, 1.0 - (averageMinutes / 240.0)));
+        double guestRatingScore = 0.5; // Neutral until employee-attributed guest ratings are available.
+        int historicalRejections = history.stream().mapToInt(StaffTask::getRejectionCount).sum();
+        double rejectionScore = Math.max(0.0, 1.0 - Math.min(1.0, historicalRejections / 5.0));
+
+        double totalScore = 0.20 * skillScore + 0.12 * proximityScore + 0.15 * loadScore + 0.08 * fairnessScore
+                + 0.12 * attendanceScore + 0.12 * shiftAvailabilityScore + 0.08 * qualityScore
+                + 0.06 * completionSpeedScore + 0.04 * guestRatingScore + 0.03 * rejectionScore;
+
+        return new CandidateScore(employee, skillScore, proximityScore, loadScore, fairnessScore, attendanceScore,
+                shiftAvailabilityScore, qualityScore, completionSpeedScore, guestRatingScore, rejectionScore, totalScore);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CandidateScore> rankAvailableCandidates(StaffTask task, Set<UUID> excludedEmployeeIds) {
+        if (task.getDepartmentId() == null) {
+            throw new IllegalStateException("Task has no DepartmentId and cannot be ranked.");
+        }
+
+        List<EmployeeProfile> eligibleEmployees = employeeProfileRepository
+                .findByRoleAndDepartmentIdAndActiveTrue(task.getRequiredRole(), task.getDepartmentId());
+        if (eligibleEmployees.isEmpty()) {
+            eligibleEmployees = employeeProfileRepository
+                    .findByRoleAndDepartmentIdAndActiveTrue(TaskRole.Staff, task.getDepartmentId());
+        }
+
+        Set<UUID> excluded = excludedEmployeeIds == null ? Collections.emptySet() : excludedEmployeeIds;
+        return eligibleEmployees.stream()
+                .filter(employee -> !excluded.contains(employee.getEmployeeId()))
+                .filter(employee -> employee.getActiveTasksCount() < maxConcurrentTasks)
+                .map(employee -> evaluateCandidate(employee, task))
+                .sorted(Comparator.comparingDouble(CandidateScore::totalScore).reversed())
+                .toList();
     }
 
     @Transactional
@@ -102,25 +159,13 @@ public class AllocationEngine {
         log.info("Running Weighted Allocation Engine for task {} (Role: {}, Priority: {}, Floor: {})",
                 task.getId(), task.getRequiredRole(), task.getPriority(), task.getFloorNumber());
 
-        List<EmployeeProfile> eligibleEmployees = employeeProfileRepository.findByRoleAndActiveTrue(task.getRequiredRole());
-        if (eligibleEmployees.isEmpty()) {
-            eligibleEmployees = employeeProfileRepository.findByRoleAndActiveTrue(TaskRole.Staff);
+        if (task.getDepartmentId() == null) {
+            throw new IllegalStateException("Task has no DepartmentId and cannot be dispatched until migration review is complete.");
         }
+        List<CandidateScore> scoredCandidates = rankAvailableCandidates(task, excludedEmployeeIds);
 
-        if (eligibleEmployees.isEmpty()) {
-            log.warn("No eligible active employees available for role {}", task.getRequiredRole());
-            return Optional.empty();
-        }
-
-        List<CandidateScore> scoredCandidates = new ArrayList<>();
-
-        for (EmployeeProfile candidate : eligibleEmployees) {
-            if (excludedEmployeeIds != null && excludedEmployeeIds.contains(candidate.getEmployeeId())) {
-                continue; // Skip employee who previously rejected this task
-            }
-
-            CandidateScore score = evaluateCandidate(candidate, task);
-            scoredCandidates.add(score);
+        for (CandidateScore score : scoredCandidates) {
+            EmployeeProfile candidate = score.employee();
 
             // Persist allocation evaluation log
             TaskAllocationLog logEntry = TaskAllocationLog.builder()
@@ -141,8 +186,6 @@ public class AllocationEngine {
             return Optional.empty();
         }
 
-        // Sort descending by totalScore
-        scoredCandidates.sort((c1, c2) -> Double.compare(c2.totalScore(), c1.totalScore()));
         CandidateScore winner = scoredCandidates.getFirst();
 
         EmployeeProfile selectedEmployee = winner.employee();

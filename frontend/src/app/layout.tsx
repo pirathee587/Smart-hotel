@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono, Playfair_Display, Fraunces, Inter } from "next/font/google";
-import "../styles/globals.css";
+import { Providers } from "@/components/common/Providers";
 import { ThemeProvider } from "@/components/common/ThemeProvider";
+import type { Metadata } from "next";
+import { Fraunces,Geist,Geist_Mono,Inter,Playfair_Display } from "next/font/google";
+import "../styles/globals.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -70,9 +71,11 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="h-full bg-bg-dark text-text-primary antialiased">
+      <body className="h-full bg-bg-dark text-text-primary antialiased" suppressHydrationWarning>
         <ThemeProvider>
-          {children}
+          <Providers>
+            {children}
+          </Providers>
         </ThemeProvider>
       </body>
     </html>

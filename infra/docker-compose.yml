@@ -1,5 +1,3 @@
-version: '3.8'
-
 networks:
   smarthotel-network:
     name: smarthotel-network
@@ -8,6 +6,8 @@ networks:
 volumes:
   postgres_data:
     name: smarthotel_postgres_data
+  identity_keys:
+    name: smarthotel_identity_keys
 
 services:
   # ===========================================================================
@@ -19,7 +19,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_SUPERUSER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS:-supersecret_postgres_password}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS:?POSTGRES_SUPERPASS is required}
       POSTGRES_DB: ${POSTGRES_IDENTITY_DB:-smarthotel_identity_db}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
@@ -27,7 +27,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init-scripts:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER:-postgres} -d ${POSTGRES_IDENTITY_DB:-smarthotel_identity_db}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -41,6 +41,9 @@ services:
     image: rabbitmq:3-management-alpine
     container_name: smarthotel-rabbitmq
     restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:?RABBITMQ_DEFAULT_USER is required}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -58,23 +61,26 @@ services:
   # ===========================================================================
   identity-service:
     build:
-      context: ../services/identity-service
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: services/identity-service/Dockerfile
     container_name: smarthotel-identity-service
     restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
-      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=smarthotel_identity_db;Username=${POSTGRES_SUPERUSER:-postgres};Password=${POSTGRES_SUPERPASS:-supersecret_postgres_password};Include Error Detail=true;
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_IDENTITY_DB:-smarthotel_identity_db};Username=${POSTGRES_SUPERUSER:-postgres};Password=${POSTGRES_SUPERPASS};Include Error Detail=true;
       Jwt__Issuer: ${JWT_ISSUER:-SmartHotel.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SmartHotel.Clients}
       Jwt__AccessTokenExpirationMinutes: ${JWT_ACCESS_TOKEN_EXPIRATION_MINUTES:-60}
+      Jwt__RefreshTokenExpirationDays: ${JWT_REFRESH_TOKEN_EXPIRATION_DAYS:-7}
     ports:
       - "${IDENTITY_HTTP_PORT:-5001}:5001"
+    volumes:
+      - identity_keys:/app/keys
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:5001/health || exit 1"]
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:5001/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -87,18 +93,22 @@ services:
   # ===========================================================================
   hotel-ops-service:
     build:
-      context: ../services/hotel-ops-service
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: services/hotel-ops-service/Dockerfile
     container_name: smarthotel-hotelops-service
     restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
-      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=smarthotel_hotelops_db;Username=${POSTGRES_SUPERUSER:-postgres};Password=${POSTGRES_SUPERPASS:-supersecret_postgres_password};Include Error Detail=true;
+      DatabaseProvider: PostgreSQL
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=smarthotel_hotelops_db;Username=${POSTGRES_SUPERUSER:-postgres};Password=${POSTGRES_SUPERPASS};Include Error Detail=true;
       Jwt__Issuer: ${JWT_ISSUER:-SmartHotel.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SmartHotel.Clients}
       Jwt__JwksUri: http://identity-service:5001/.well-known/jwks.json
+      HOTEL_OPS_SERVICE_API_KEY: ${HOTEL_OPS_SERVICE_API_KEY:?HOTEL_OPS_SERVICE_API_KEY is required}
       RabbitMQ__HostName: rabbitmq
       RabbitMQ__Port: 5672
+      RabbitMQ__UserName: ${RABBITMQ_DEFAULT_USER}
+      RabbitMQ__Password: ${RABBITMQ_DEFAULT_PASS}
     ports:
       - "${HOTELOPS_HTTP_PORT:-5002}:5002"
       - "${HOTELOPS_GRPC_PORT:-5012}:5012"
@@ -110,7 +120,7 @@ services:
       identity-service:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:5002/health || exit 1"]
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:5002/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -123,23 +133,27 @@ services:
   # ===========================================================================
   booking-payments-service:
     build:
-      context: ../services/booking-payments-service
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: services/booking-payments-service/Dockerfile
     container_name: smarthotel-booking-service
     restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
-      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=smarthotel_bookings;Username=${POSTGRES_SUPERUSER:-postgres};Password=${POSTGRES_SUPERPASS:-supersecret_postgres_password};Include Error Detail=true;
+      PAYMENT_USE_STUB_GATEWAY: "true"
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=smarthotel_bookings;Username=${POSTGRES_SUPERUSER:-postgres};Password=${POSTGRES_SUPERPASS};Include Error Detail=true;
       Jwt__Issuer: ${JWT_ISSUER:-SmartHotel.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SmartHotel.Clients}
       Jwt__JwksUri: http://identity-service:5001/.well-known/jwks.json
       HOTEL_OPS_SERVICE_URL: http://hotel-ops-service:5002
       HOTEL_OPS_GRPC_URL: http://hotel-ops-service:5012
+      HOTEL_OPS_SERVICE_API_KEY: ${HOTEL_OPS_SERVICE_API_KEY:?HOTEL_OPS_SERVICE_API_KEY is required}
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
-      PAYHERE_MERCHANT_ID: ${PAYHERE_MERCHANT_ID:-1220001}
-      PAYHERE_MERCHANT_SECRET: ${PAYHERE_MERCHANT_SECRET:-smarthotel_secret_sandbox_key_2026}
-      PAYHERE_IS_SANDBOX: "true"
+      RABBITMQ_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
+      PAYHERE_MERCHANT_ID: ${PAYHERE_MERCHANT_ID:?PAYHERE_MERCHANT_ID is required}
+      PAYHERE_MERCHANT_SECRET: ${PAYHERE_MERCHANT_SECRET:?PAYHERE_MERCHANT_SECRET is required}
+      PAYHERE_IS_SANDBOX: ${PAYHERE_IS_SANDBOX:-true}
     ports:
       - "${BOOKING_HTTP_PORT:-5003}:5003"
       - "${BOOKING_GRPC_PORT:-5013}:5013"
@@ -153,7 +167,7 @@ services:
       hotel-ops-service:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:5003/health || exit 1"]
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:5003/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -174,12 +188,14 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/smarthotel_fieldops
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_SUPERUSER:-postgres}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_SUPERPASS:-supersecret_postgres_password}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_SUPERPASS}
       JWT_JWKS_URI: http://identity-service:5001/.well-known/jwks.json
       JWT_ISSUER: ${JWT_ISSUER:-SmartHotel.Identity}
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
-      BIOMETRICS_DEVICE_API_KEY: ${BIOMETRICS_DEVICE_API_KEY:-smarthotel_device_secret_2026}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      BIOMETRICS_DEVICE_API_KEY: ${BIOMETRICS_DEVICE_API_KEY:?BIOMETRICS_DEVICE_API_KEY is required}
     ports:
       - "${FIELDOPS_HTTP_PORT:-8084}:8084"
     depends_on:
@@ -205,15 +221,18 @@ services:
     image: redis:7-alpine
     container_name: smarthotel-redis
     restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD} ping | grep PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - smarthotel-network
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
 
   # ===========================================================================
   # 8. CORE SERVICE #5: Notification Service (.NET 8 Clean Architecture + SignalR)
@@ -226,13 +245,15 @@ services:
     restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
-      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=smarthotel_notifications;Username=${POSTGRES_SUPERUSER:-postgres};Password=${POSTGRES_SUPERPASS:-supersecret_postgres_password};Include Error Detail=true;
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=smarthotel_notifications;Username=${POSTGRES_SUPERUSER:-postgres};Password=${POSTGRES_SUPERPASS};Include Error Detail=true;
       Jwt__Issuer: ${JWT_ISSUER:-SmartHotel.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SmartHotel.Clients}
       Jwt__JwksUri: http://identity-service:5001/.well-known/jwks.json
-      Redis__ConnectionString: redis:6379
+      Redis__ConnectionString: redis:6379,password=${REDIS_PASSWORD}
       RabbitMQ__Host: rabbitmq
       RabbitMQ__Port: 5672
+      RabbitMQ__UserName: ${RABBITMQ_DEFAULT_USER}
+      RabbitMQ__Password: ${RABBITMQ_DEFAULT_PASS}
     ports:
       - "${NOTIFICATION_HTTP_PORT:-5004}:5004"
     depends_on:
@@ -273,9 +294,13 @@ services:
       BOOKING_GRPC_PORT: 5013
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
-      RABBITMQ_USER: ${RABBITMQ_DEFAULT_USER:-guest}
-      RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-guest}
+      RABBITMQ_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
       RATE_LIMIT_PER_MINUTE: 20
+      LLM_PROVIDER: ${LLM_PROVIDER:-fallback}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-flash}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
     ports:
       - "${CONCIERGE_HTTP_PORT:-5005}:5005"
     depends_on:
@@ -299,8 +324,8 @@ services:
   # ===========================================================================
   gateway:
     build:
-      context: ../gateway/SmartHotel.Gateway
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: gateway/SmartHotel.Gateway/Dockerfile
     container_name: smarthotel-gateway
     restart: unless-stopped
     environment:
@@ -345,6 +370,35 @@ services:
       - smarthotel-network
 
   # ===========================================================================
+  # 11. NEXT.JS FRONTEND
+  # ===========================================================================
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_GATEWAY_URL:-http://localhost:5000}
+    container_name: smarthotel-frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    ports:
+      - "${FRONTEND_HTTP_PORT:-3000}:3000"
+    depends_on:
+      gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - smarthotel-network
+
+  # ===========================================================================
   # 7. OUTER EDGE: NGINX Reverse Proxy (SSL Termination, Coarse IP Rate Limit)
   # ===========================================================================
   nginx:
@@ -356,6 +410,8 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    volumes:
+      - ./nginx/certs:/etc/nginx/certs:ro
     depends_on:
       gateway:
         condition: service_healthy

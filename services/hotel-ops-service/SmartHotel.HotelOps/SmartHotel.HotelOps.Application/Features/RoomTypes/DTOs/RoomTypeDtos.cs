@@ -18,6 +18,7 @@ public class RoomTypeDto
     public string CancellationPolicyText { get; set; } = string.Empty;
     public bool IsPublished { get; set; }
     public bool IsActive { get; set; }
+    public string Currency { get; set; } = "LKR";
     public List<RoomTypeImageDto> Images { get; set; } = new();
 }
 

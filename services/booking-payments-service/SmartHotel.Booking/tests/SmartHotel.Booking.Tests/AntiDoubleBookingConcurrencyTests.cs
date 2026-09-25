@@ -35,7 +35,8 @@ public class AntiDoubleBookingConcurrencyTests
                 AmenitiesFee: 2000m,
                 Capacity: capacity,
                 IsPublished: true,
-                IsActive: true),
+                IsActive: true,
+                Currency: "LKR"),
             Room = new RoomInfo(
                 Id: _roomId,
                 RoomTypeId: _roomTypeId,
@@ -182,10 +183,46 @@ public class FakeHotelOpsClient : IHotelOpsClient
 {
     public RoomTypeInfo? RoomType { get; set; }
     public RoomInfo? Room { get; set; }
+    public RoomReadinessInfo? Readiness { get; set; }
+    public RoomClaimResult? ClaimResult { get; set; }
+    public bool ReleaseResult { get; set; } = true;
+    public int ClaimCount { get; set; }
+    public int ReleaseCount { get; set; }
+    public Func<Guid, Guid, string, Task<RoomClaimResult>>? CustomClaimHandler { get; set; }
+
+    public bool AutoReady { get; set; } = false;
 
     public Task<RoomTypeInfo?> GetRoomTypeAsync(Guid roomTypeId, CancellationToken ct = default)
         => Task.FromResult(RoomType);
 
     public Task<RoomInfo?> GetRoomAsync(Guid roomId, CancellationToken ct = default)
         => Task.FromResult(Room);
+
+    public Task<RoomReadinessInfo?> GetRoomReadinessAsync(Guid roomId, CancellationToken ct = default)
+    {
+        if (Readiness != null)
+        {
+            if (Readiness.RoomId == Guid.Empty) return Task.FromResult<RoomReadinessInfo?>(Readiness with { RoomId = roomId });
+            return Task.FromResult<RoomReadinessInfo?>(Readiness);
+        }
+        if (AutoReady)
+        {
+            return Task.FromResult<RoomReadinessInfo?>(new RoomReadinessInfo(roomId, "Available", false, true, "InspectionApproved", true, null));
+        }
+        return Task.FromResult<RoomReadinessInfo?>(null);
+    }
+
+    public Task<RoomClaimResult> ClaimRoomAsync(Guid roomId, Guid bookingId, string source = "FrontOffice", CancellationToken ct = default)
+    {
+        ClaimCount++;
+        if (CustomClaimHandler != null) return CustomClaimHandler(roomId, bookingId, source);
+        if (ClaimResult != null) return Task.FromResult(ClaimResult);
+        return Task.FromResult(new RoomClaimResult(true, true, roomId, bookingId, null, "Claimed"));
+    }
+
+    public Task<bool> ReleaseRoomClaimAsync(Guid roomId, Guid bookingId, CancellationToken ct = default)
+    {
+        ReleaseCount++;
+        return Task.FromResult(ReleaseResult);
+    }
 }

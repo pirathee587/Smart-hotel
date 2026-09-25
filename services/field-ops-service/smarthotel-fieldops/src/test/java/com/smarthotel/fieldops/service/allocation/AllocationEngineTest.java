@@ -6,6 +6,7 @@ import com.smarthotel.fieldops.domain.model.enums.TaskEnums.TaskPriority;
 import com.smarthotel.fieldops.domain.model.enums.TaskEnums.TaskRole;
 import com.smarthotel.fieldops.domain.model.enums.TaskEnums.TaskStatus;
 import com.smarthotel.fieldops.domain.repository.EmployeeProfileRepository;
+import com.smarthotel.fieldops.domain.repository.AttendanceRecordRepository;
 import com.smarthotel.fieldops.domain.repository.StaffTaskRepository;
 import com.smarthotel.fieldops.domain.repository.TaskAllocationLogRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,6 +35,9 @@ class AllocationEngineTest {
     @Mock
     private TaskAllocationLogRepository allocationLogRepository;
 
+    @Mock
+    private AttendanceRecordRepository attendanceRecordRepository;
+
     private AllocationEngine allocationEngine;
 
     @BeforeEach
@@ -43,6 +47,7 @@ class AllocationEngineTest {
                 employeeProfileRepository,
                 staffTaskRepository,
                 allocationLogRepository,
+                attendanceRecordRepository,
                 5,
                 10
         );
@@ -103,9 +108,8 @@ class AllocationEngineTest {
         assertThat(score.loadScore()).isCloseTo(0.8, within(0.0001));
         assertThat(score.fairnessScore()).isCloseTo(0.7, within(0.0001));
 
-        // Expected total = 0.35*1.0 + 0.25*1.0 + 0.25*0.8 + 0.15*0.7
-        //               = 0.35 + 0.25 + 0.20 + 0.105 = 0.905
-        assertThat(score.totalScore()).isCloseTo(0.905, within(0.0001));
+        // Multi-signal score also includes neutral defaults for unavailable history signals.
+        assertThat(score.totalScore()).isCloseTo(0.75475, within(0.0001));
     }
 
     @Test
@@ -222,6 +226,7 @@ class AllocationEngineTest {
     @Test
     @DisplayName("AllocateTask assigns task to the highest-scoring candidate under linear formulas")
     void allocateTask_AssignsToHighestScoringCandidate() {
+        UUID departmentId = UUID.randomUUID();
         StaffTask task = StaffTask.builder()
                 .id(UUID.randomUUID())
                 .title("Turnover Cleaning 204")
@@ -229,6 +234,7 @@ class AllocationEngineTest {
                 .priority(TaskPriority.High)
                 .floorNumber(2)
                 .status(TaskStatus.Pending)
+                .departmentId(departmentId)
                 .build();
 
         // Candidate A: On floor 2 (prox 1.0), activeTasks = 2 (load 1 - 2/5 = 0.6), completedToday = 4 (fairness 1 - 4/10 = 0.6)
@@ -237,6 +243,7 @@ class AllocationEngineTest {
                 .employeeId(UUID.randomUUID())
                 .fullName("Staff A")
                 .role(TaskRole.Housekeeper)
+                .departmentId(departmentId)
                 .proficiencyLevel(5)
                 .currentFloor(2)
                 .activeTasksCount(2)
@@ -249,13 +256,14 @@ class AllocationEngineTest {
                 .employeeId(UUID.randomUUID())
                 .fullName("Staff B")
                 .role(TaskRole.Housekeeper)
+                .departmentId(departmentId)
                 .proficiencyLevel(5)
                 .currentFloor(3)
                 .activeTasksCount(0)
                 .tasksCompletedToday(0)
                 .build();
 
-        when(employeeProfileRepository.findByRoleAndActiveTrue(TaskRole.Housekeeper))
+        when(employeeProfileRepository.findByRoleAndDepartmentIdAndActiveTrue(TaskRole.Housekeeper, departmentId))
                 .thenReturn(List.of(empA, empB));
 
         Optional<EmployeeProfile> allocated = allocationEngine.allocateTask(task, Collections.emptySet());
@@ -269,5 +277,29 @@ class AllocationEngineTest {
         verify(staffTaskRepository).save(task);
         verify(employeeProfileRepository).save(empB);
         verify(allocationLogRepository, times(2)).save(any());
+    }
+
+    @Test
+    @DisplayName("Recommendations rank best available employee first and exclude fully loaded staff")
+    void rankAvailableCandidates_ExcludesUnavailableAndRanksBestFirst() {
+        UUID departmentId = UUID.randomUUID();
+        StaffTask task = StaffTask.builder()
+                .id(UUID.randomUUID()).requiredRole(TaskRole.Housekeeper)
+                .departmentId(departmentId).floorNumber(2).build();
+        EmployeeProfile available = EmployeeProfile.builder()
+                .employeeId(UUID.randomUUID()).fullName("Available")
+                .role(TaskRole.Housekeeper).departmentId(departmentId)
+                .activeTasksCount(1).currentFloor(2).proficiencyLevel(5).build();
+        EmployeeProfile busy = EmployeeProfile.builder()
+                .employeeId(UUID.randomUUID()).fullName("Fully loaded")
+                .role(TaskRole.Housekeeper).departmentId(departmentId)
+                .activeTasksCount(5).currentFloor(2).proficiencyLevel(5).build();
+        when(employeeProfileRepository.findByRoleAndDepartmentIdAndActiveTrue(TaskRole.Housekeeper, departmentId))
+                .thenReturn(List.of(busy, available));
+
+        List<AllocationEngine.CandidateScore> ranked = allocationEngine.rankAvailableCandidates(task, Set.of());
+
+        assertThat(ranked).extracting(score -> score.employee().getEmployeeId())
+                .containsExactly(available.getEmployeeId());
     }
 }

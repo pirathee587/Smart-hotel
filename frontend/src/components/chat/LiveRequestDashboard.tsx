@@ -1,10 +1,10 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { portalApi } from '@/services/portalApi'
 import { useChatSocket } from '@/hooks/useChatSocket'
+import { portalApi } from '@/services/portalApi'
+import type { ActiveRequestDto,RequestStatusUpdate } from '@/types/chat'
+import { useCallback,useEffect,useState } from 'react'
 import CsatWidget from './CsatWidget'
-import type { ActiveRequestDto, RequestStatusUpdate } from '@/types/chat'
 
 interface LiveRequestDashboardProps {
   token: string
@@ -45,7 +45,7 @@ export default function LiveRequestDashboard({ token, bookingId }: LiveRequestDa
     }
   }, [token, bookingId])
 
-  useEffect(() => { loadRequests() }, [loadRequests])
+  useEffect(() => { queueMicrotask(() => void loadRequests()) }, [loadRequests])
 
   // ── Real-time updates via SignalR ─────────────────────────────────────────
   const handleStatusUpdate = useCallback((update: RequestStatusUpdate) => {

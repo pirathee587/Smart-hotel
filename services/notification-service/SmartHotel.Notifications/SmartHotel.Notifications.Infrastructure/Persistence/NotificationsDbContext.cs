@@ -11,6 +11,7 @@ public class NotificationsDbContext : DbContext
     }
 
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<ManagerAlert> ManagerAlerts => Set<ManagerAlert>();
     public DbSet<ChatRoom> ChatRooms => Set<ChatRoom>();
     public DbSet<ChatParticipant> ChatParticipants => Set<ChatParticipant>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
@@ -31,6 +32,24 @@ public class NotificationsDbContext : DbContext
             b.HasIndex(n => n.UserId);
             b.HasIndex(n => new { n.UserId, n.IsRead });
             b.HasIndex(n => n.CreatedAt);
+        });
+
+        modelBuilder.Entity<ManagerAlert>(b =>
+        {
+            b.ToTable("manager_alerts");
+            b.HasKey(a => a.Id);
+            b.Property(a => a.AlertType).HasMaxLength(50).IsRequired();
+            b.Property(a => a.Severity).HasMaxLength(20).IsRequired();
+            b.Property(a => a.BookingReference).HasMaxLength(100);
+            b.Property(a => a.MessageSnippet).HasMaxLength(500).IsRequired();
+            b.Property(a => a.PayloadJson).HasColumnType("text");
+            b.Property(a => a.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
+            b.HasIndex(a => a.EventId).IsUnique();
+            b.HasIndex(a => new { a.Status, a.CreatedAt }).IsDescending(false, true);
+            b.HasIndex(a => new { a.AlertType, a.Status });
+
+            // Guest/room/booking/task/actor IDs are cross-service correlation IDs.
+            // They intentionally have no database FKs in this polyglot architecture.
         });
 
         // ChatRoom configuration

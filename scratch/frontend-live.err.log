@@ -1,0 +1,179 @@
+[browser] [API 403] Access Denied: You do not have permission to access /api/v1/auth/me. 
+    at eval (src\lib\axios.ts:227:15)
+    at async initialize (src\features\auth\store\useAuthStore.ts:507:11)
+  225 |       }
+  226 |     } else if (status === 403) {
+> 227 |       console.error(
+      |               ^
+  228 |         `[API 403] Access Denied: You do not have permission to access ${error.config?.ur...
+  229 |       );
+  230 |       error.friendlyMessage = "Access Denied: You do not have permission to perform this ... (src\lib\axios.ts:227:15)
+[browser] [API 403] Access Denied: You do not have permission to access /api/v1/auth/me. 
+    at eval (src\lib\axios.ts:227:15)
+    at async initialize (src\features\auth\store\useAuthStore.ts:507:11)
+  225 |       }
+  226 |     } else if (status === 403) {
+> 227 |       console.error(
+      |               ^
+  228 |         `[API 403] Access Denied: You do not have permission to access ${error.config?.ur...
+  229 |       );
+  230 |       error.friendlyMessage = "Access Denied: You do not have permission to perform this ... (src\lib\axios.ts:227:15)
+[browser] [API 403] Access Denied: You do not have permission to access /api/v1/auth/me. 
+    at eval (src\lib\axios.ts:227:15)
+    at async initialize (src\features\auth\store\useAuthStore.ts:507:11)
+  225 |       }
+  226 |     } else if (status === 403) {
+> 227 |       console.error(
+      |               ^
+  228 |         `[API 403] Access Denied: You do not have permission to access ${error.config?.ur...
+  229 |       );
+  230 |       error.friendlyMessage = "Access Denied: You do not have permission to perform this ... (src\lib\axios.ts:227:15)
+[browser] [API 403] Access Denied: You do not have permission to access /api/v1/auth/me. 
+    at eval (src\lib\axios.ts:227:15)
+    at async initialize (src\features\auth\store\useAuthStore.ts:507:11)
+  225 |       }
+  226 |     } else if (status === 403) {
+> 227 |       console.error(
+      |               ^
+  228 |         `[API 403] Access Denied: You do not have permission to access ${error.config?.ur...
+  229 |       );
+  230 |       error.friendlyMessage = "Access Denied: You do not have permission to perform this ... (src\lib\axios.ts:227:15)
+[browser] [API 403] Access Denied: You do not have permission to access /api/v1/auth/me. 
+    at eval (src\lib\axios.ts:227:15)
+    at async initialize (src\features\auth\store\useAuthStore.ts:507:11)
+  225 |       }
+  226 |     } else if (status === 403) {
+> 227 |       console.error(
+      |               ^
+  228 |         `[API 403] Access Denied: You do not have permission to access ${error.config?.ur...
+  229 |       );
+  230 |       error.friendlyMessage = "Access Denied: You do not have permission to perform this ... (src\lib\axios.ts:227:15)
+[browser] [API 403] Access Denied: You do not have permission to access /api/v1/auth/me. 
+    at eval (src\lib\axios.ts:227:15)
+    at async initialize (src\features\auth\store\useAuthStore.ts:507:11)
+  225 |       }
+  226 |     } else if (status === 403) {
+> 227 |       console.error(
+      |               ^
+  228 |         `[API 403] Access Denied: You do not have permission to access ${error.config?.ur...
+  229 |       );
+  230 |       error.friendlyMessage = "Access Denied: You do not have permission to perform this ... (src\lib\axios.ts:227:15)
+[browser] [API 403] Access denied for /api/v1/auth/me. (src\lib\axios.ts:232:17)
+[browser] [API 403] Access denied for /api/v1/auth/me. (src\lib\axios.ts:232:17)
+[browser] [API 403] Access denied for /api/v1/auth/me. (src\lib\axios.ts:232:17)
+[browser] [API 403] Access denied for /api/v1/auth/me. (src\lib\axios.ts:232:17)
+[browser] [API 403] Access denied for /api/v1/auth/me. (src\lib\axios.ts:232:17)
+[browser] [API 403] Access denied for /api/v1/auth/me. (src\lib\axios.ts:232:17)
+[browser] Image with src "/images/hero-view.jpg" has "fill" but is missing "sizes" prop. Please add it to improve page performance. Read more: https://nextjs.org/docs/api-reference/next/image#sizes
+[browser] Image with src "/images/slowhouse-interior.jpg" has "fill" but is missing "sizes" prop. Please add it to improve page performance. Read more: https://nextjs.org/docs/api-reference/next/image#sizes
+[browser] Image with src "/images/pool-thumb.jpg" has "fill" but is missing "sizes" prop. Please add it to improve page performance. Read more: https://nextjs.org/docs/api-reference/next/image#sizes
+[browser] Image with src "/images/hero-view.jpg" has "fill" but is missing "sizes" prop. Please add it to improve page performance. Read more: https://nextjs.org/docs/api-reference/next/image#sizes
+[browser] Image with src "/images/keyless-entry.jpg" has "fill" but is missing "sizes" prop. Please add it to improve page performance. Read more: https://nextjs.org/docs/api-reference/next/image#sizes
+[browser] Image with src "/images/ridge-thumb.jpg" has "fill" but is missing "sizes" prop. Please add it to improve page performance. Read more: https://nextjs.org/docs/api-reference/next/image#sizes
+[browser] Image with src "https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=1200" has "fill" but is missing "sizes" prop. Please add it to improve page performance. Read more: https://nextjs.org/docs/api-reference/next/image#sizes
+[browser] Image with src "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=1200" has "fill" but is missing "sizes" prop. Please add it to improve page performance. Read more: https://nextjs.org/docs/api-reference/next/image#sizes
+[browser] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <LoadingBoundary name="complete-p..." loading={null}>
+      <HTTPAccessFallbackBoundary notFound={undefined} forbidden={undefined} unauthorized={undefined}>
+        <RedirectBoundary>
+          <RedirectErrorBoundary router={{...}}>
+            <InnerLayoutRouter url="/portal/co..." tree={[...]} params={{}} cacheNode={{rsc:{...}, ...}} ...>
+              <SegmentViewNode type="page" pagePath="portal/com...">
+                <SegmentTrieNode>
+                <ClientPageRoot Component={function CompleteProfilePage} serverProvidedParams={{...}}>
+                  <CompleteProfilePage params={Promise} searchParams={Promise}>
+                    <main className="staff-port...">
+                      <form onSubmit={function submit} className="mx-auto ma...">
+                        <header>
+                        <section>
+                        <section>
+                        <section>
+                        <section className="rounded-2x...">
+                          <h2>
+                          <div className="grid gap-5...">
+                            <label className="text-sm te...">
+                              <span>
+                              <input
+                                required={true}
+                                autoComplete="off"
+                                placeholder="Enter the NIC or national identity number"
+                                value=""
+                                onChange={function onChange}
+                                className="mt-2 w-full rounded-xl border border-[#35504b] bg-[#0e211f] px-4 py-3 text-..."
+-                               fdprocessedid="knbwzq"
+                              >
+                            <label className="text-sm te...">
+                              <span>
+                              <input
+                                required={true}
+                                autoComplete="off"
+                                placeholder="Enter the bank name"
+                                value=""
+                                onChange={function onChange}
+                                className="mt-2 w-full rounded-xl border border-[#35504b] bg-[#0e211f] px-4 py-3 text-..."
+-                               fdprocessedid="9wgoif"
+                              >
+                            <label className="text-sm te...">
+                              <span>
+                              <input
+                                required={true}
+                                autoComplete="off"
+                                placeholder="Enter the account holder name"
+                                value=""
+                                onChange={function onChange}
+                                className="mt-2 w-full rounded-xl border border-[#35504b] bg-[#0e211f] px-4 py-3 text-..."
+-                               fdprocessedid="oj4a3yh"
+                              >
+                            <label className="text-sm te...">
+                              <span>
+                              <input
+                                required={true}
+                                autoComplete="off"
+                                placeholder="Enter the bank account number"
+                                value=""
+                                onChange={function onChange}
+                                className="mt-2 w-full rounded-xl border border-[#35504b] bg-[#0e211f] px-4 py-3 text-..."
+-                               fdprocessedid="c0fzc"
+                              >
+                            <label className="text-sm te...">
+                              <span>
+                              <input
+                                required={true}
+                                autoComplete="off"
+                                placeholder="Enter the branch name"
+                                value=""
+                                onChange={function onChange}
+                                className="mt-2 w-full rounded-xl border border-[#35504b] bg-[#0e211f] px-4 py-3 text-..."
+-                               fdprocessedid="3nlvxr"
+                              >
+                        ...
+              ...
+            ...
+ 
+[browser] Image with src "https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=1200" has "fill" but is missing "sizes" prop. Please add it to improve page performance. Read more: https://nextjs.org/docs/api-reference/next/image#sizes
+[browser] Image with src "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=1200" has "fill" but is missing "sizes" prop. Please add it to improve page performance. Read more: https://nextjs.org/docs/api-reference/next/image#sizes
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+⨯ ReferenceError: logout is not defined
+    at DashboardLayout (src\app\dashboard\layout.tsx:59:77)
+  57 |       router.replace(getStaffHome(user));
+  58 |     }
+> 59 |   }, [hydrated, isAuthenticated, user, mustResetPassword, router, pathname, logout]);
+     |                                                                             ^
+  60 |
+  61 |   if (!hydrated || !isAuthenticated || !user) {
+  62 |     return ( {
+  digest: '2743750888'
+}
+⚠ Fast Refresh had to perform a full reload due to a runtime error.

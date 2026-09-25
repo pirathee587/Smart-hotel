@@ -44,6 +44,9 @@ public class OvertimeApproval {
     private Instant actionedAt;
 
     public void approve(UUID managerId, String notes) {
+        if (managerId != null && managerId.equals(this.employeeId)) {
+            throw new SecurityException("Employees cannot approve their own overtime.");
+        }
         this.status = OvertimeStatus.Approved;
         this.managerId = managerId;
         this.managerNotes = notes;
@@ -51,6 +54,9 @@ public class OvertimeApproval {
     }
 
     public void reject(UUID managerId, String notes) {
+        if (managerId != null && managerId.equals(this.employeeId)) {
+            throw new SecurityException("Employees cannot reject their own overtime.");
+        }
         this.status = OvertimeStatus.Rejected;
         this.managerId = managerId;
         this.managerNotes = notes;

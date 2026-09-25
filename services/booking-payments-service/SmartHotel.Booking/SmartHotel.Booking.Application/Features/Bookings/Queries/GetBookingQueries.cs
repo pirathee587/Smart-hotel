@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SmartHotel.Booking.Application.Common;
 using SmartHotel.Booking.Application.Features.Bookings.DTOs;
 using SmartHotel.Booking.Application.Interfaces;
+using SmartHotel.Booking.Domain.Enums;
 
 namespace SmartHotel.Booking.Application.Features.Bookings.Queries;
 
@@ -39,6 +40,7 @@ public class GetBookingByIdQueryHandler : IRequestHandler<GetBookingByIdQuery, R
             CheckOutDate = booking.CheckOutDate,
             GuestCount = booking.GuestCount,
             TotalAmount = booking.TotalAmount,
+            Currency = booking.Currency,
             Status = booking.Status,
             PaymentReference = booking.PaymentReference,
             PayHereOrderId = booking.PayHereOrderId,
@@ -80,6 +82,7 @@ public class GetCustomerBookingsQueryHandler : IRequestHandler<GetCustomerBookin
             CheckOutDate = booking.CheckOutDate,
             GuestCount = booking.GuestCount,
             TotalAmount = booking.TotalAmount,
+            Currency = booking.Currency,
             Status = booking.Status,
             PaymentReference = booking.PaymentReference,
             PayHereOrderId = booking.PayHereOrderId,
@@ -156,7 +159,12 @@ public class GetActiveStayQueryHandler : IRequestHandler<GetActiveStayQuery, Res
     }
 }
 
-public record GetAllBookingsQuery(int? Limit = null) : IRequest<Result<List<BookingDto>>>;
+public record GetAllBookingsQuery(
+    int? Limit = null,
+    BookingStatus? Status = null,
+    string? Search = null,
+    DateOnly? CheckInDate = null,
+    DateOnly? CheckOutDate = null) : IRequest<Result<List<BookingDto>>>;
 
 public class GetAllBookingsQueryHandler : IRequestHandler<GetAllBookingsQuery, Result<List<BookingDto>>>
 {
@@ -169,9 +177,34 @@ public class GetAllBookingsQueryHandler : IRequestHandler<GetAllBookingsQuery, R
 
     public async Task<Result<List<BookingDto>>> Handle(GetAllBookingsQuery request, CancellationToken ct)
     {
-        var query = _context.Bookings
-            .AsNoTracking()
-            .OrderByDescending(b => b.CreatedAtUtc);
+        var query = _context.Bookings.AsNoTracking();
+
+        if (request.Status.HasValue)
+        {
+            query = query.Where(b => b.Status == request.Status.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Search))
+        {
+            var search = request.Search.Trim().ToLower();
+            query = query.Where(b =>
+                b.BookingReference.ToLower().Contains(search) ||
+                b.CustomerLastName.ToLower().Contains(search) ||
+                b.CustomerEmail.ToLower().Contains(search) ||
+                b.RoomNumber.ToLower().Contains(search));
+        }
+
+        if (request.CheckInDate.HasValue)
+        {
+            query = query.Where(b => b.CheckInDate == request.CheckInDate.Value);
+        }
+
+        if (request.CheckOutDate.HasValue)
+        {
+            query = query.Where(b => b.CheckOutDate == request.CheckOutDate.Value);
+        }
+
+        query = query.OrderByDescending(b => b.CreatedAtUtc);
 
         var list = request.Limit.HasValue && request.Limit.Value > 0
             ? await query.Take(request.Limit.Value).ToListAsync(ct)
@@ -191,6 +224,7 @@ public class GetAllBookingsQueryHandler : IRequestHandler<GetAllBookingsQuery, R
             CheckOutDate = booking.CheckOutDate,
             GuestCount = booking.GuestCount,
             TotalAmount = booking.TotalAmount,
+            Currency = booking.Currency,
             Status = booking.Status,
             PaymentReference = booking.PaymentReference,
             PayHereOrderId = booking.PayHereOrderId,
@@ -200,4 +234,101 @@ public class GetAllBookingsQueryHandler : IRequestHandler<GetAllBookingsQuery, R
         return Result<List<BookingDto>>.Success(dtos);
     }
 }
+
+public record FrontOfficeSummaryDto(
+    int TodayArrivals,
+    int TodayDepartures,
+    int PendingCheckIns,
+    int PendingCheckOuts,
+    int CheckedInToday,
+    int TotalConfirmed,
+    int TotalActiveOccupancy);
+
+public record GetFrontOfficeSummaryQuery() : IRequest<Result<FrontOfficeSummaryDto>>;
+
+public class GetFrontOfficeSummaryQueryHandler : IRequestHandler<GetFrontOfficeSummaryQuery, Result<FrontOfficeSummaryDto>>
+{
+    private readonly IBookingDbContext _context;
+
+    public GetFrontOfficeSummaryQueryHandler(IBookingDbContext context)
+    {
+        _context = context;
+    }
+
+    public async Task<Result<FrontOfficeSummaryDto>> Handle(GetFrontOfficeSummaryQuery request, CancellationToken ct)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var bookings = await _context.Bookings.AsNoTracking().ToListAsync(ct);
+
+        var todayArrivals = bookings.Count(b => b.CheckInDate == today && b.Status == BookingStatus.Confirmed);
+        var todayDepartures = bookings.Count(b => b.CheckOutDate == today && b.Status == BookingStatus.CheckedIn);
+        var pendingCheckIns = bookings.Count(b => b.Status == BookingStatus.Confirmed);
+        var pendingCheckOuts = bookings.Count(b => b.Status == BookingStatus.CheckedIn);
+        var checkedInToday = bookings.Count(b => b.Status == BookingStatus.CheckedIn && b.CheckInDate == today);
+        var totalConfirmed = bookings.Count(b => b.Status == BookingStatus.Confirmed);
+        var totalActive = bookings.Count(b => b.Status == BookingStatus.CheckedIn);
+
+        var dto = new FrontOfficeSummaryDto(
+            todayArrivals,
+            todayDepartures,
+            pendingCheckIns,
+            pendingCheckOuts,
+            checkedInToday,
+            totalConfirmed,
+            totalActive);
+
+        return Result<FrontOfficeSummaryDto>.Success(dto);
+    }
+}
+
+public record FrontOfficeAuditLogDto(
+    Guid Id,
+    Guid BookingId,
+    string BookingReference,
+    string Action,
+    Guid? ActorUserId,
+    string ActorRole,
+    string Source,
+    string? Reason,
+    string PreviousState,
+    string NewState,
+    string? Details,
+    DateTime TimestampUtc);
+
+public record GetBookingAuditLogsQuery(Guid BookingId) : IRequest<Result<List<FrontOfficeAuditLogDto>>>;
+
+public class GetBookingAuditLogsQueryHandler : IRequestHandler<GetBookingAuditLogsQuery, Result<List<FrontOfficeAuditLogDto>>>
+{
+    private readonly IBookingDbContext _context;
+
+    public GetBookingAuditLogsQueryHandler(IBookingDbContext context)
+    {
+        _context = context;
+    }
+
+    public async Task<Result<List<FrontOfficeAuditLogDto>>> Handle(GetBookingAuditLogsQuery request, CancellationToken ct)
+    {
+        var logs = await _context.FrontOfficeAuditLogs
+            .AsNoTracking()
+            .Where(l => l.BookingId == request.BookingId)
+            .OrderByDescending(l => l.TimestampUtc)
+            .Select(l => new FrontOfficeAuditLogDto(
+                l.Id,
+                l.BookingId,
+                l.BookingReference,
+                l.Action,
+                l.ActorUserId,
+                l.ActorRole,
+                l.Source,
+                l.Reason,
+                l.PreviousState,
+                l.NewState,
+                l.Details,
+                l.TimestampUtc))
+            .ToListAsync(ct);
+
+        return Result<List<FrontOfficeAuditLogDto>>.Success(logs);
+    }
+}
+
 

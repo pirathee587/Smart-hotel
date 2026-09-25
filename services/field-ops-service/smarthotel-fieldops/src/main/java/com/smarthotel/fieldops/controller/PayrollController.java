@@ -30,7 +30,7 @@ public class PayrollController {
     private final EmployeeProfileRepository employeeProfileRepository;
 
     @PostMapping("/generate")
-    @PreAuthorize("hasAnyRole('Admin', 'Manager')")
+    @PreAuthorize("hasAnyRole('Owner', 'Admin', 'Manager')")
     public ResponseEntity<PayrollResponse> generatePayroll(@Valid @RequestBody GeneratePayrollRequest req) {
         log.info("Request to generate payroll for employee {} ({} to {})", req.employeeId(), req.startDate(), req.endDate());
         PayrollRecord record = payrollService.generatePayroll(req.employeeId(), req.startDate(), req.endDate());
@@ -46,7 +46,7 @@ public class PayrollController {
     }
 
     @GetMapping("/{employeeId}")
-    @PreAuthorize("hasAnyRole('Admin', 'Manager')")
+    @PreAuthorize("hasAnyRole('Owner', 'Admin', 'Manager')")
     public ResponseEntity<List<PayrollResponse>> getEmployeePayrollHistory(@PathVariable UUID employeeId) {
         List<PayrollRecord> records = payrollService.getEmployeePayrollHistory(employeeId);
         return ResponseEntity.ok(records.stream().map(this::mapToResponse).toList());

@@ -1,0 +1,32 @@
+version: '3.8'
+
+networks:
+  smarthotel-test-network:
+    name: smarthotel-test-network
+    driver: bridge
+
+volumes:
+  smarthotel_postgres_test_data:
+    name: smarthotel_postgres_test_data
+
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: smarthotel-postgres-test
+    restart: "no"
+    environment:
+      POSTGRES_USER: ${TEST_POSTGRES_ADMIN_USER:-test_admin}
+      POSTGRES_PASSWORD: ${TEST_POSTGRES_ADMIN_PASS:?TEST_POSTGRES_ADMIN_PASS is required}
+      POSTGRES_DB: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - smarthotel_postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEST_POSTGRES_ADMIN_USER:-test_admin} -d postgres"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 3s
+    networks:
+      - smarthotel-test-network

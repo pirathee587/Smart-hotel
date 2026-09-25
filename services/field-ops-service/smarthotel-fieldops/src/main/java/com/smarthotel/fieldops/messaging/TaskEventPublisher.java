@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smarthotel.fieldops.domain.model.EmployeeProfile;
 import com.smarthotel.fieldops.domain.model.KdsOrder;
 import com.smarthotel.fieldops.domain.model.StaffTask;
+import com.smarthotel.fieldops.domain.model.TaskOutbox;
+import com.smarthotel.fieldops.domain.repository.TaskOutboxRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -12,6 +14,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
@@ -20,9 +23,50 @@ public class TaskEventPublisher {
 
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
+    private final TaskOutboxRepository taskOutboxRepository;
 
     @Value("${rabbitmq.exchange.events:smarthotel.events}")
     private String eventsExchange;
+
+    public void publishTaskCreated(StaffTask task, UUID eventId, String customerId, String bookingReference) {
+        try {
+            Map<String, Object> payload = Map.of(
+                    "taskId", task.getId().toString(),
+                    "eventId", eventId != null ? eventId.toString() : "",
+                    "customerId", customerId != null ? customerId : "",
+                    "bookingReference", bookingReference != null ? bookingReference : "",
+                    "title", task.getTitle(),
+                    "requiredRole", task.getRequiredRole().name(),
+                    "priority", task.getPriority().name(),
+                    "status", task.getStatus().name(),
+                    "roomNumber", task.getRoomNumber() != null ? task.getRoomNumber() : "",
+                    "createdAt", task.getCreatedAt().toString()
+            );
+
+            String payloadJson = objectMapper.writeValueAsString(payload);
+            String routingKey = "task.created";
+
+            // 1. Transactionally persist in Outbox to guarantee at-least-once delivery
+            TaskOutbox outbox = TaskOutbox.builder()
+                    .aggregateId(task.getId())
+                    .eventType(routingKey)
+                    .payloadJson(payloadJson)
+                    .build();
+
+            // 2. Attempt immediate publish to RabbitMQ
+            try {
+                rabbitTemplate.convertAndSend(eventsExchange, routingKey, payloadJson);
+                outbox.markConfirmed();
+                log.info("Published task.created event directly for task {} (eventId={})", task.getId(), eventId);
+            } catch (Exception ex) {
+                log.warn("Direct RabbitMQ publish failed for task.created; queued in Outbox for background retry: {}", ex.getMessage());
+            }
+
+            taskOutboxRepository.save(outbox);
+        } catch (Exception ex) {
+            log.error("Could not record task.created outbox event: {}", ex.getMessage());
+        }
+    }
 
     public void publishTaskDispatched(StaffTask task, EmployeeProfile employee) {
         try {

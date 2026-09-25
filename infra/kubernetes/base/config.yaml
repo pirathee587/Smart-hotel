@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: smarthotel-config
+data:
+  ASPNETCORE_ENVIRONMENT: Staging
+  JWT_ISSUER: SmartHotel.Identity
+  JWT_AUDIENCE: SmartHotel.Clients
+  Jwt__Issuer: SmartHotel.Identity
+  Jwt__Audience: SmartHotel.Clients
+  Jwt__JwksUri: http://identity:5001/.well-known/jwks.json
+  Authentication__Issuer: SmartHotel.Identity
+  Authentication__Audience: SmartHotel.Clients
+  Authentication__JwksUri: http://identity:5001/.well-known/jwks.json
+  RABBITMQ_HOST: rabbitmq
+  RABBITMQ_PORT: "5672"
+  REDIS_HOST: redis
+  HOTEL_OPS_SERVICE_URL: http://hotel-ops:5002
+  HOTEL_OPS_GRPC_URL: http://hotel-ops:5012
+  BOOKING_SERVICE_URL: http://booking:5003
+  FIELD_OPS_SERVICE_URL: http://field-ops:8084
+  IDENTITY_JWKS_URL: http://identity:5001/.well-known/jwks.json
+  ReverseProxy__Clusters__identity-service__Destinations__destination1__Address: http://identity:5001
+  ReverseProxy__Clusters__hotelops-service__Destinations__destination1__Address: http://hotel-ops:5002
+  ReverseProxy__Clusters__booking-service__Destinations__destination1__Address: http://booking:5003
+  ReverseProxy__Clusters__fieldops-service__Destinations__destination1__Address: http://field-ops:8084
+  ReverseProxy__Clusters__notifications-service__Destinations__destination1__Address: http://notifications:5004
+  ReverseProxy__Clusters__concierge-service__Destinations__destination1__Address: http://concierge:5005
+  PAYHERE_IS_SANDBOX: "true"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+data:
+  01-databases.sql: |
+    SELECT 'CREATE DATABASE smarthotel_hotelops_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'smarthotel_hotelops_db')\gexec
+    SELECT 'CREATE DATABASE smarthotel_bookings' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'smarthotel_bookings')\gexec
+    SELECT 'CREATE DATABASE smarthotel_fieldops' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'smarthotel_fieldops')\gexec
+    SELECT 'CREATE DATABASE smarthotel_notifications' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'smarthotel_notifications')\gexec

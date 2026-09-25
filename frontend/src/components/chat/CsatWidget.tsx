@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
 import { portalApi } from '@/services/portalApi'
 import type { ActiveRequestDto } from '@/types/chat'
+import { useState } from 'react'
 
 interface CsatWidgetProps {
   token: string

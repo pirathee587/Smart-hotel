@@ -45,29 +45,41 @@ public class CreatePayHereOrderCommandHandler : IRequestHandler<CreatePayHereOrd
             return Result<PayHereOrderResponse>.Failure($"Cannot generate payment for booking in {booking.Status} state.");
         }
 
+        if (string.IsNullOrWhiteSpace(booking.Currency) || booking.Currency.Trim().Length != 3)
+        {
+            return Result<PayHereOrderResponse>.Failure($"Booking with ID {booking.Id} has missing or invalid authoritative currency.");
+        }
+        var currency = booking.Currency.Trim().ToUpperInvariant();
+
         var orderId = booking.BookingReference;
         var payHereOrderReq = new PayHereOrderRequest(
             OrderId: orderId,
             Amount: booking.TotalAmount,
-            Currency: "LKR",
+            Currency: currency,
             CustomerFirstName: req.CustomerFirstName,
             CustomerLastName: booking.CustomerLastName,
             CustomerEmail: booking.CustomerEmail,
             CustomerPhone: req.CustomerPhone,
             ItemsDescription: $"SmartHotel Room Reservation {booking.BookingReference}",
-            ReturnUrl: req.ReturnUrl ?? "https://smarthotel.lk/booking/success",
-            CancelUrl: req.CancelUrl ?? "https://smarthotel.lk/booking/cancelled",
-            NotifyUrl: req.NotifyUrl ?? "http://gateway:5000/api/v1/payments/payhere/notify");
+            // Provider callback destinations are server-controlled. Never accept them from a browser.
+            ReturnUrl: "https://smarthotel.lk/booking/success",
+            CancelUrl: "https://smarthotel.lk/booking/cancelled",
+            NotifyUrl: "http://gateway:5000/api/v1/payments/payhere/notify");
 
         var payHereResponse = _payHereService.GenerateOrderRequest(payHereOrderReq);
 
         // Record initial payment entry
-        var payment = new Payment
+        var payment = await _context.Payments.FirstOrDefaultAsync(
+            p => p.Provider == PaymentProvider.PayHere && p.PayHereOrderId == orderId, ct);
+        if (payment is not null)
+            return Result<PayHereOrderResponse>.Success(payHereResponse, "Existing PayHere order returned.");
+
+        payment = new Payment
         {
             Id = Guid.NewGuid(),
             BookingId = booking.Id,
             Amount = booking.TotalAmount,
-            Currency = "LKR",
+            Currency = currency,
             Provider = PaymentProvider.PayHere,
             PayHereOrderId = orderId,
             Status = PaymentStatus.Created
