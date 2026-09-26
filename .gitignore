@@ -61,3 +61,8 @@ dist/
 *~
 .DS_Store
 Thumbs.db
+
+# Terraform generated files
+.terraform/
+*.tfstate
+*.tfstate.backup
